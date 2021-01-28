@@ -4,6 +4,9 @@ using HDF5, Statistics , Interpolations, Dates, RecursiveArrayTools, NCDatasets
 const c = 299792458 * 100 # speed of light cm/s
 const r = 8.314472; # universal gas constant joules / moles / K
 const Nₐ = 6.0221415e23; # molecules / moles
+global const H₂O_ind, CH₄_ind, CO₂_ind, HDO_ind = 1, 2, 3, 4;
+global const temperature_ind, pressure_ind = 5, 6
+global const windspeed_ind = 7
 
 struct MolecularMetaData
     datafile::String
@@ -178,6 +181,25 @@ function read_new_NIST_data(filename::String)
     return dataset
 end # function read_NIST_data
 
+function read_new_NIST_data2(filename::String)
+    #data_fields = ["Temperature_K", "Pressure_mbar", "path_m", "LocalTime", "Freq_Hz", "DCSdata_Hz"];
+    file = h5open(filename, "r")
+    pressure = 0.9938*read(file, "Pres_CS") # pressure in mbar
+    temperature = read(file, "Temp_CS") + 273.15*ones(length(pressure)) # temperature in K
+    pathlength = 195017 # round trip path length in meters DCSA
+    #pathlength = 196367 # round trip path length in m for DCSB
+
+    time = read(file, "TotalTime")
+    grid = read(file, "frequency_Hz")
+    grid = grid ./ c # convert from hz to wavenumber 
+    intensity = read(file, "WaveToFitROI_1600a")
+    close(file)
+
+    # save to a struct
+    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength)
+    return dataset
+end # function read_NIST_data
+
 
 function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour(1))
     timestamps = unix2datetime.(dataset.time)
@@ -321,16 +343,31 @@ function save_inversion_results(filename::String, results::Array{InversionResult
     num_experiments, num_datapoints = size(results);
 
     # create the dimensions
+    num_datapoints = 2
            defDim(file, "start_time", num_datapoints)
-    defVar(file, "start_time", data.timestamp, ("start_time",))
+    #defVar(file, "start_time", data.timestamp, ("start_time",))
+
+    # save the concentrations
+    H₂O_VMR = defVar(file, "H2O_VMR", Float64, ("start_time",))
+    H₂O_VMR[:] = [results[1,i].x[H₂O_ind] for i =1:num_datapoints]
+    
+    CO₂_VMR = defVar(file, "CO2_VMR", Float64, ("start_time",))
+    CO₂_VMR[:] = [results[1,i].x[CO₂_ind] for i=1:num_datapoints]
+    CH₄_VMR = defVar(file, "CH4_VMR", Float64, ("start_time",))
+    CH₄_VMR[:] = [results[CH₄_ind,i].x[CH₄_ind] for i=1:num_datapoints];
+    HDO_VMR = defVar(file, "HDO_VMR", Float64, ("start_time",))
+    HDO_VMR[:] = [results[3,i].x[HDO_ind] for i=1:num_datapoints];
     try
+
+    
+
         for i=1:num_experiments
             println(experiment_label[i])
        timeseries = results[i,:]
            
        group = defGroup(file, experiment_label[i])
-        defDim(group, "spectral_grid", length(timeseries[1].grid));
-        defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
+        defDim(group, "spectral_grid", length(timeseries[1].grid))
+        #defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
         model = defVar(group, "model", Float64, ("start_time", "spectral_grid"))
         measurement = defVar(group, "measurement", Float64, ("start_time", "spectral_grid"))
 
@@ -340,8 +377,9 @@ function save_inversion_results(filename::String, results::Array{InversionResult
             println("saving model")
         model[:,:] = list2array([timeseries[i].f for i=1:num_datapoints])
     end
-    catch
+    catch e
         println("save failed")
+        println(e)
     finally
         close(file)
     end
