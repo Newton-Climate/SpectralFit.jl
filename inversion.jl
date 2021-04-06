@@ -1,8 +1,8 @@
 using LinearAlgebra, Plots, Distributed, DistributedArrays, DiffResults
-using Debugger
+using ProgressMeter, Debugger
 include("read_data.jl")
 include("forward_model.jl")
-using Plots
+
 
 
 struct InversionResults
@@ -36,7 +36,7 @@ function make_prior_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
 end
 
 
-function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::Dict{String,Real})
+function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
     f = generate_forward_model(measurement, spectra, inversion_setup);
     Sₑ = make_prior_error(measurement);
     #Sₑ = diagm(ones(length(measurement.intensity)));
@@ -59,7 +59,52 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
 
         x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
         #x = xᵢ+inv(kᵢ'*kᵢ)*kᵢ'*(y-fᵢ);
-#        @show x[1:4]
+
+
+        xᵢ = x;
+        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
+        
+        if i==1 #prevent premature ending of while loop
+            δᵢ = 1
+        end
+        
+        println("δᵢ for iteration ",i," is ",δᵢ)        
+        i = i+1
+    end #while loop
+
+    # Calculate χ²
+    χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
+    S = inv(kᵢ'*Sₑ*kᵢ)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+end#function
+
+function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
+    f = generate_forward_model(x₀, measurement, spectra, inversion_setup);
+    #Sₑ = make_prior_error(measurement);
+    Sₑ = diagm(ones(length(measurement.intensity)));
+    y = measurement.intensity;
+    kᵢ = zeros(length(y), length(x₀));
+    xᵢ = x₀;
+    xᵢ = assemble_state_vector!(xᵢ)
+    tolerence = 1.0e-4;
+    δᵢ = 10;
+    i = 1
+    fᵢ = f(xᵢ)
+
+    # begin the non-linear fit
+    while i<10 && δᵢ>tolerence
+
+        result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
+
+        ForwardDiff.jacobian!(result, f, xᵢ);
+        f_old = fᵢ
+        fᵢ, kᵢ = result.value, result.derivs[1]
+
+        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
+                                @show x[1:5]
+        #x = xᵢ+inv(kᵢ'*kᵢ)*kᵢ'*(y-fᵢ);
+
+
 
         xᵢ = x;
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
@@ -82,12 +127,23 @@ end#function
 
 function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::Dataset, ν_range::Tuple)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[2])
-    spectra = construct_spectra("../H2O_S.data", "../CH4_S.data", "../CO2_S.data", "../HDO_S.data", ν_min=ν_range[1]-3, ν_max=ν_range[2]+3, p=measurement.pressure, T=measurement.temperature)
+    spectra = construct_spectra("../H2O_S.data", "../CH4_S.data", "../CO2_S.data", "../HDO_S.data", ν_min=ν_range[1]-3, ν_max=ν_range[2]+3, p=measurement.pressure, T=measurement.temperature, use_TCCON=inversion_setup["use_TCCON"])
     results = try
         nonlinear_inversion(xₐ, measurement, spectra, inversion_setup)
     catch
         InversionResults(measurement.time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid)
     end    
+    return results
+end
+
+function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, ν_range::Tuple)
+    measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[2])
+    spectra = construct_spectra(molecules, ν_min=ν_range[1]-3, ν_max=ν_range[2]+3, p=measurement.pressure, T=measurement.temperature, use_TCCON=inversion_setup["use_TCCON"])
+    results = #try
+        nonlinear_inversion(xₐ, measurement, spectra, inversion_setup)
+#    catch
+#        InversionResults(measurement.time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid)
+#    end    
     return results
 end
 
@@ -103,8 +159,7 @@ function run_inversion(xₐ::Array{<:Real,1}, dataset::Dataset, inversion_setup:
     results = Array{InversionResults}(undef, (3,num_measurements));
     println("Beginning inversion")
     
-    #    Threads.@threads for i=1:num_measurements
-    for i = 1:num_measurements
+        Threads.@threads for i=1:num_measurements
         
         if i%100 == 0
             println(i)
@@ -117,17 +172,50 @@ function run_inversion(xₐ::Array{<:Real,1}, dataset::Dataset, inversion_setup:
     return results
 end
 
+
+function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Dict)
+    num_measurements = length(dataset.pressure) # number of total measurements
+    modelled = Array{InversionResults}(undef, num_measurements)
+    num_windows = length(keys(spectral_windows));
+    
+
+    results = Array{InversionResults}(undef, (num_windows, num_measurements));
+    println("Beginning inversion")
+    
+    for i=1:num_measurements
+
+        
+        if i%100 == 0
+            println(i)
+        end
+        j = 1;
+
+        for spectral_window in keys(spectral_windows)
+            results[j,i] = fit_spectra(i, xₐ, dataset, molecules, spectral_window);
+            j += 1;
+        end
+    end
+    return results
+end
+
+
+
+        
+
+
         
 function invert_all_files(xₐ::Array{<:Real}, inversion_setup::Dict; path=pwd())
     files = readdir(path);
     num_files = length(files)
     
-    Threads.@threads for i=1:num_files
+    @showprogress 1 "Computing..." for i=1:num_files
 
-        file = files[i];
+        file = path*files[i];
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
-        data = read_new_NIST_data(file);
+        println(file)
+        data = read_DCS_data(file)
+        
 
         if inversion_setup["take_time_average"]
             data = take_time_average(data)
