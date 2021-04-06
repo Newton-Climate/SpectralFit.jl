@@ -1,5 +1,6 @@
-using RadiativeTransfer.CrossSection
+using RadiativeTransfer, RadiativeTransfer.CrossSection
 using HDF5, Statistics , Interpolations, Dates, RecursiveArrayTools, NCDatasets
+using OrderedCollections
 
 const c = 299792458 * 100 # speed of light cm/s
 const r = 8.314472; # universal gas constant joules / moles / K
@@ -9,11 +10,12 @@ global const temperature_ind, pressure_ind = 5, 6
 global const windspeed_ind = 7
 
 struct MolecularMetaData
-    datafile::String
+    filename::String
     molecule_num::Integer
     isotope_num::Integer
-    ν_range::Array{<:Real,1}
+    ν_grid::AbstractRange
     hitran_table
+    model
 end
 
 mutable struct Molecule
@@ -43,32 +45,43 @@ struct InversionResults
     grid
 end
 
-function get_molecule_info(datafile::String, molecule_num::Int, isotope_num::Int, ν_range::Array{<:Real,1})
-        hitran_table = CrossSection.read_hitran(datafile, mol=molecule_num, iso=isotope_num, ν_min=ν_range[1], ν_max=ν_range[2])
-        return MolecularMetaData(datafile, molecule_num, isotope_num, ν_range, hitran_table)
+function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
+    hitran_table = CrossSection.read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_range[1], ν_max=ν_range[end])
+    model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
+        return MolecularMetaData(filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
 
 
 function calculate_cross_sections( filename::String, molec_num::Integer, iso_num::Integer; ν_min::Real=6000, ν_max::Real=6400, δν=0.01, p::Real=1001, T::Real=290)
     hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
-    model = make_hitran_model(hitran_table, Voigt());
+    model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
     grid = ν_min:δν:ν_max;
-    cross_sections = absorption_cross_section(model, grid, p, T);
-    
-    # store results in a struct
+    cross_sections = absorption_cross_section(model, grid, p, T) # store results in a struct
     molecule = Molecule(cross_sections, grid, p, T, hitran_table)
     return molecule
 end #function calculate_cross_sections
 
+function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_min::Real=6000, δν::Real=0.01, ν_max::Real=6300, p::Real=1001, T::Real=295, use_TCCON::Bool=false)
+
+    ν_grid = ν_min:δν:ν_max;
+    cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
+    out = OrderedDict(molecules[i] => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table) for i=1:length(molecules))
+    return out
+end #function calculate_cross_sections
+
+
+
+
 function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001)
-hitran_table = molecule.hitran_table;
-    model = make_hitran_model(hitran_table, Voigt());
+
+    model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=CPU());
     grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
-    
-    value = absorption_cross_section(model, grid, p, T);
+
+    # recalculate cross-sections
+    cross_sections = absorption_cross_section(model, grid, p, T);
     
     # store rsults in a struct
-    molecule = Molecule(value, grid, p, T, hitran_table)
+    molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table)
     return molecule
 end
 
@@ -81,13 +94,20 @@ function construct_spectra(H₂O_datafile::String, CH₄_datafile::String, CO₂
         HDO = calculate_cross_sections(HDO_datafile, 1, 4, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
     end
     
-    CH₄ = calculate_cross_sections(CH₄_datafile, 6, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
+    CH₄ = calculate_cross_sections(CH₄_datafile, 6, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)        
     CO₂ = calculate_cross_sections(CO₂_datafile, 2, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
     spectra = Spectra(H₂O, CH₄, CO₂, HDO)
     return spectra
 end
 
-function construct_spectra!(spectra::Spectra; p=1001, T=290)
+function construct_spectra(molecules::Array{MolecularMetaData,1})
+    spectra = Dict{MolecularMetaData, Molecule}(molecule => calculate_cross_sections(molecule) for molecule in molecules)
+    return spectra
+end
+
+
+
+function construct_spectra!(spectra::Spectra; p::Real=1001, T::Real=290)
     H₂O = calculate_cross_sections!(spectra.H₂O, p=p, T=T);
     CO₂ = calculate_cross_sections!(spectra.CO₂, p=p, T=T)
     CH₄ = calculate_cross_sections!(spectra.CH₄, p=p, T=T)
@@ -97,6 +117,15 @@ function construct_spectra!(spectra::Spectra; p=1001, T=290)
     spectra.H₂O, spectra.CO₂, spectra.CH₄, spectra.HDO = H₂O, CO₂, CH₄, HDO;
     return spectra
 end
+
+function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
+    for species in keys(spectra)
+        println(typeof(p))
+        spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T);
+    end
+    return spectra
+end
+
 
     
 
@@ -162,43 +191,88 @@ function read_NIST_data(filename::String)
 end # function read_NIST_data
 
 
-function read_new_NIST_data(filename::String)
-    data_fields = ["Temperature_K", "Pressure_mbar", "path_m", "LocalTime", "Freq_Hz", "DCSdata_Hz"];
+function read_DCS_data(filename::String)
+
     file = h5open(filename, "r")
-    pressure = 0.9938*read(file, "pressure_evolution") # pressure in mbar
-    temperature = read(file, "temperature_fitted_l") + 273.15*ones(length(pressure)) # temperature in K
+    ds_obj = read(file)
+    if haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "totaltime_priorfit")
+        datafields = ["pressure_evolution", "temperature_fitted_l", "totaltime_priorfit", "frequency_Hz", "WaveToFitROI_1600a"];
+    elseif haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "TotalTime")
+        datafields = ["pressure_evolution", "temperature_fitted_l", "TotalTime", "frequency_Hz", "WaveToFitROI_1600a"];
+    elseif haskey(ds_obj, "Pres_CS")
+        datafields = ["Pres_CS", "Temp_CS", "TotalTime", "frequency_Hz", "WaveToFitROI_1600a"]
+    else
+            println("incorrect HDF datafile fieldnames")
+        end
+       
+
+    if  haskey(ds_obj, "temperature_fitted")
+datafields[2] = "temperature_fitted"
+    elseif haskey(ds_obj, "temperature_fitted_l")
+        datafields[2] = "temperature_fitted_l"
+    elseif haskey(ds_obj, "Temp_CS")
+        datafields[2] = "Temp_CS"
+        elseif hasfield(ds_obj, "temperature_evolution")
+    end
+
+    pressure = 0.9938*read(file, datafields[1]) # pressure in mbar
+    temperature = read(file, datafields[2]) + 273.15*ones(length(pressure)) # temperature in K
     pathlength = 195017 # round trip path length in meters DCSA
     #pathlength = 196367 # round trip path length in m for DCSB
 
-    time = read(file, "totaltime_priorfit")
-    grid = read(file, "frequency_Hz")
+    time = read(file, datafields[3])
+    grid = read(file, datafields[4])
     grid = grid ./ c # convert from hz to wavenumber 
-    intensity = read(file, "WaveToFitROI_1600a")
+    intensity = read(file, datafields[5])
     close(file)
 
     # save to a struct
     dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength)
     return dataset
-end # function read_NIST_data
+end # function read_DCS_data
 
-function read_new_NIST_data2(filename::String)
-    #data_fields = ["Temperature_K", "Pressure_mbar", "path_m", "LocalTime", "Freq_Hz", "DCSdata_Hz"];
+
+
+function read_DCS_data(filename::String)
+
     file = h5open(filename, "r")
-    pressure = 0.9938*read(file, "Pres_CS") # pressure in mbar
-    temperature = read(file, "Temp_CS") + 273.15*ones(length(pressure)) # temperature in K
+    ds_obj = read(file)
+    if haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "totaltime_priorfit")
+        datafields = ["pressure_evolution", "temperature_fitted_l", "totaltime_priorfit", "frequency_Hz", "WaveToFitROI_1600a"];
+    elseif haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "TotalTime")
+        datafields = ["pressure_evolution", "temperature_fitted_l", "TotalTime", "frequency_Hz", "WaveToFitROI_1600a"];
+        elseif haskey(ds_obj, "Pres_CS")
+            datafields = ["Pres_CS", "Temp_CS", "TotalTime", "frequency_Hz", "WaveToFitROI_1600a"]
+        else
+            println("incorrect HDF datafile fieldnames")
+        end
+       
+
+	if  haskey(ds_obj, "temperature_fitted")
+datafields[2] = "temperature_fitted"
+elseif haskey(ds_obj, "temperature_fitted_l")
+datafields[2] = "temperature_fitted_l"
+elseif haskey(ds_obj, "Temp_CS")
+            datafields[2] = "Temp_CS"
+        elseif haskey(ds_obj, "temperature_evolution")
+            datafields[2] = "temperature_evolution"
+end
+
+    pressure = 0.9938*read(file, datafields[1]) # pressure in mbar
+    temperature = read(file, datafields[2]) + 273.15*ones(length(pressure)) # temperature in K
     pathlength = 195017 # round trip path length in meters DCSA
     #pathlength = 196367 # round trip path length in m for DCSB
 
-    time = read(file, "TotalTime")
-    grid = read(file, "frequency_Hz")
+    time = read(file, datafields[3])
+    grid = read(file, datafields[4])
     grid = grid ./ c # convert from hz to wavenumber 
-    intensity = read(file, "WaveToFitROI_1600a")
+    intensity = read(file, datafields[5])
     close(file)
 
     # save to a struct
     dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength)
     return dataset
-end # function read_NIST_data
+end # function read_DCS_data
 
 
 function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour(1))
@@ -227,7 +301,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         averaging_times[i] = (t₁, t₂)
         machine_time[i] = dataset.time[indexes[1]];
 
-        # update variablers
+        # update variables
         i += 1
         t₁ = t₂
         t₂ = t₂ + δt
@@ -319,6 +393,8 @@ function OCO_spectra(filename::String)
     return sitp
 end
 
+
+
 function list2array(array_in::Array)
     outer_dim, inner_dim = length(array_in), length(array_in[1])
     data_type = typeof(array_in[1][1])
@@ -343,9 +419,9 @@ function save_inversion_results(filename::String, results::Array{InversionResult
     num_experiments, num_datapoints = size(results);
 
     # create the dimensions
-    num_datapoints = 2
+    #num_datapoints = 2
            defDim(file, "start_time", num_datapoints)
-    #defVar(file, "start_time", data.timestamp, ("start_time",))
+    defVar(file, "start_time", data.timestamp, ("start_time",))
 
     # save the concentrations
     H₂O_VMR = defVar(file, "H2O_VMR", Float64, ("start_time",))
@@ -357,6 +433,12 @@ function save_inversion_results(filename::String, results::Array{InversionResult
     CH₄_VMR[:] = [results[CH₄_ind,i].x[CH₄_ind] for i=1:num_datapoints];
     HDO_VMR = defVar(file, "HDO_VMR", Float64, ("start_time",))
     HDO_VMR[:] = [results[3,i].x[HDO_ind] for i=1:num_datapoints];
+
+    pressure = defVar(file, "pressure", Float64, ("start_time",))
+    pressure[:] = [results[1,i].x[pressure_ind] for i=1:num_datapoints];
+
+    temperature = defVar(file, "temperature", Float64, ("start_time",))
+    temperature[:] = [results[1,i].x[temperature_ind] for i=1:num_datapoints];
     try
 
     
@@ -367,7 +449,7 @@ function save_inversion_results(filename::String, results::Array{InversionResult
            
        group = defGroup(file, experiment_label[i])
         defDim(group, "spectral_grid", length(timeseries[1].grid))
-        #defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
+        defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
         model = defVar(group, "model", Float64, ("start_time", "spectral_grid"))
         measurement = defVar(group, "measurement", Float64, ("start_time", "spectral_grid"))
 
@@ -384,3 +466,4 @@ function save_inversion_results(filename::String, results::Array{InversionResult
         close(file)
     end
 end
+
