@@ -5,6 +5,7 @@ include("forward_model.jl")
 
 
 
+# to store results after fit
 struct InversionResults
     timestamp
     x
@@ -39,7 +40,6 @@ end
 function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
     f = generate_forward_model(measurement, spectra, inversion_setup);
     Sₑ = make_prior_error(measurement);
-    #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
     xᵢ = x₀;
@@ -79,9 +79,10 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
 end#function
 
 function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
+    
     f = generate_forward_model(x₀, measurement, spectra, inversion_setup);
-    #Sₑ = make_prior_error(measurement);
-    Sₑ = diagm(ones(length(measurement.intensity)));
+    Sₑ = make_prior_error(measurement, a=0.0019656973992654737);
+    #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
     xᵢ = x₀;
@@ -94,32 +95,31 @@ function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spect
     # begin the non-linear fit
     while i<10 && δᵢ>tolerence
 
+        # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
-
         ForwardDiff.jacobian!(result, f, xᵢ);
-        f_old = fᵢ
+        f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
+        # Gauss-Newton Algorithm 
         x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
-                                @show x[1:5]
-        #x = xᵢ+inv(kᵢ'*kᵢ)*kᵢ'*(y-fᵢ);
 
 
+        xᵢ = x; # reassign state vector for next iteration
 
-        xᵢ = x;
+        #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
         
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
-        end
-        
+        end        
         println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = inv(kᵢ'*Sₑ*kᵢ)
+    S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
     return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
 end#function
 
@@ -137,8 +137,8 @@ function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::D
 end
 
 function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, ν_range::Tuple)
-    measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[2])
-    spectra = construct_spectra(molecules, ν_min=ν_range[1]-3, ν_max=ν_range[2]+3, p=measurement.pressure, T=measurement.temperature, use_TCCON=inversion_setup["use_TCCON"])
+    measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
+    spectra = construct_spectra(molecules, ν_min=ν_range[1]-3, ν_max=ν_range[end]+3, p=measurement.pressure, T=measurement.temperature, use_TCCON=inversion_setup["use_TCCON"])
     results = #try
         nonlinear_inversion(xₐ, measurement, spectra, inversion_setup)
 #    catch
@@ -173,12 +173,10 @@ function run_inversion(xₐ::Array{<:Real,1}, dataset::Dataset, inversion_setup:
 end
 
 
-function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Dict)
+function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::AbstractDict)
     num_measurements = length(dataset.pressure) # number of total measurements
     modelled = Array{InversionResults}(undef, num_measurements)
     num_windows = length(keys(spectral_windows));
-    
-
     results = Array{InversionResults}(undef, (num_windows, num_measurements));
     println("Beginning inversion")
     
@@ -191,6 +189,7 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
         j = 1;
 
         for spectral_window in keys(spectral_windows)
+            println(spectral_window)
             results[j,i] = fit_spectra(i, xₐ, dataset, molecules, spectral_window);
             j += 1;
         end
@@ -229,3 +228,4 @@ function invert_all_files(xₐ::Array{<:Real}, inversion_setup::Dict; path=pwd()
     println("done with all files")
     return true
 end
+
