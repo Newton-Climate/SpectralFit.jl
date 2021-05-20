@@ -14,9 +14,11 @@ struct InversionResults
     χ²
     S
     grid
+    G
+    K
 end
 
-function make_prior_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
+function make_obs_error(measurement::Measurement; a::Float64=0.005092707186368767)
     n = length(measurement.intensity)
     Sₑ = zeros((n,n))
     base = mean(measurement.intensity)
@@ -26,7 +28,7 @@ function make_prior_error(measurement::Measurement; a::Float64=0.3*0.01611750368
     return Sₑ
 end
 
-function make_prior_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
+function make_obs_error(dataset::Dataset; a::Float64=0.005092707186368767)
     n = length(measurement.intensity)
     Sₑ = zeros((n,n))
     base = mean(dataset.intensity)
@@ -39,7 +41,7 @@ end
 
 function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
     f = generate_forward_model(measurement, spectra, inversion_setup);
-    Sₑ = make_prior_error(measurement);
+    Sₑ = make_obs_error(measurement);
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
     xᵢ = x₀;
@@ -68,7 +70,7 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
             δᵢ = 1
         end
         
-        println("δᵢ for iteration ",i," is ",δᵢ)        
+       # println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
@@ -78,10 +80,10 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
 end#function
 
-function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
+function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     
-    f = generate_forward_model(x₀, measurement, spectra, inversion_setup);
-    Sₑ = make_prior_error(measurement, a=0.0019656973992654737);
+    #
+    Sₑ = make_obs_error(measurement, a=0.0019656973992654737);
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
@@ -91,6 +93,7 @@ function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spect
     δᵢ = 10;
     i = 1
     fᵢ = f(xᵢ)
+    
 
     # begin the non-linear fit
     while i<10 && δᵢ>tolerence

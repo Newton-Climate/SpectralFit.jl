@@ -13,7 +13,7 @@ inversion_setup = Dict{String,Real}(
 )
 
 #data = read_NIST_data("../../data/20160921.h5")
-data = read_new_NIST_data("../../data/20161019.h5");
+data = read_DCS_data("../../data/20161019.h5");
 data = take_time_average(data)
 measurement =  get_measurement(10, data, 6050, 6200)
 

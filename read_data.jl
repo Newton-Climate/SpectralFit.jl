@@ -1,4 +1,4 @@
-using RadiativeTransfer, RadiativeTransfer.CrossSection
+using RadiativeTransfer, RadiativeTransfer.Absorption
 using HDF5, Statistics , Interpolations, Dates, NCDatasets
 using OrderedCollections
 
@@ -6,6 +6,7 @@ using OrderedCollections
 const c = 299792458 * 100 # speed of light cm/s
 const r = 8.314472; # universal gas constant joules / moles / K
 const Nₐ = 6.0221415e23; # molecules / moles
+const g₀ = 9.8196 #gravity
 global const H₂O_ind, CH₄_ind, CO₂_ind, HDO_ind = 1, 2, 3, 4;
 global const temperature_ind, pressure_ind = 5, 6
 global const windspeed_ind = 7
@@ -60,13 +61,15 @@ struct InversionResults
     χ²
     S
     grid
+    G
+    K
 end
 
 function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
     """
 constructor for MolecularMetaData
 """
-    hitran_table = CrossSection.read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_range[1], ν_max=ν_range[end])
+    hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_range[1], ν_max=ν_range[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
         return MolecularMetaData(filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
@@ -79,7 +82,7 @@ function calculate_cross_sections( filename::String, molec_num::Integer, iso_num
 """
     
     # retrieve the HiTran parameters 
-    hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
+    hitran_table = read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
     model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
     grid = ν_min:δν:ν_max;
     cross_sections = absorption_cross_section(model, grid, p, T)
@@ -317,24 +320,31 @@ Finds the indexes given values ν_min:ν_max
     indexes = collect(a:b)
     return indexes
 end
-
-function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)
-    """
-Calculates the vertical column density
-"""
-    
-    ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
-    vcd = δz*ρₙ
-    return vcd
-end
-
-function calc_vcd(p::Float64, T::Float64, δz::Float64)
+   
+function calc_vcd(p::Real, T::Real, δz::Real)
     VMR_H₂O = 0
-    ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
-    vcd = δz*ρₙ
+    ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4 # molecules/cm³
+    vcd = δz*ρₙ # molecules/cm²
     return vcd
 end
 
+
+function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
+    δp = δp*100 # convert from mbar to pascals 
+    dry_mass = 28.9647e-3  /Nₐ  # in kg/molec, weighted average for N2 and O2
+    wet_mass = 18.01528e-3 /Nₐ  # just H2O
+    ratio = dry_mass/wet_mass
+    vmr_dry = 1 - vmr_H₂O
+    M  = vmr_dry * dry_mass + vmr_H₂O * wet_mass
+    vcd_dry = vmr_dry*δp/(M*g₀*100.0^2)   #includes m2->cm2
+    vcd_H₂O = vmr_H₂O*δp/(M*g₀*100^2)
+    return vcd_dry + vcd_H₂O
+end
+
+
+    
+
+    
     
 
 function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real)
@@ -397,8 +407,8 @@ Constructs an interpolation of the OCO cross-sections grid provided by JPL
     broadener = broadener_min:δ_broadener:broadener_max;
     grid = (ν, broadener, T, p);
 #    sitp = interpolate(grid, σ, Gridded(Linear()))
-    itp = interpolate(σ, BSpline(Cubic(Line(OnGrid()))))
-    sitp = scale(itp, ν, T, p);
+    itp = interpolate( σ, BSpline(Cubic(Line(OnGrid()))))
+    sitp = Interpolations.scale(itp, ν, T, p);
     return sitp
 end
 
