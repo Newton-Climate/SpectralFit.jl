@@ -187,5 +187,5 @@ plot!(xlabel="Column averaging kernel", ylabel="Pressure [hPa]", title="Column a
 
 p_h2o_ck = plot(cK_h2o, p, yflip=true,lw=2, label="cAK for H2O")
 plot!(xlabel="Column averaging kernel", ylabel="Pressure [hPa]", title="Column averaging kernel for H2O")
-plot(p_h2o_ck, p_co2_ck, p_co2_ck, layout=(1,3))
+plot(p_h2o_ck, p_co2_ck, p_ch4_ck, layout=(1,3))
 savefig("column_averaging_kernal.pdf")
