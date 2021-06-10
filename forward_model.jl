@@ -103,12 +103,15 @@ calculates the legendre polynomial over domain x::Vector of degree max::Integer
 end  
 
 function calc_polynomial_term( legendre_polynomial_degree::Integer,
-                             shape_parameters::Union{Real, Array{<:Real,1}},
+                             shape_parameters::Union{Real, Array{<:Real,1}, Nothing},
                                wavenumber_grid_length::Integer)
     """
 calculates the Legendre Polynomial Coefficients and weights by the shape parameters
 """
     
+    if legendre_polynomial_degree == 0 || legendre_polynomial_degree == 1
+        return ones(wavenumber_grid_length)'
+    end
     
     x = collect(range(-1, stop=1, length=wavenumber_grid_length));
     polynomial_term = Array{Float64}(undef, length(x))

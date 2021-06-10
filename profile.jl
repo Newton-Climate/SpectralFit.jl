@@ -129,7 +129,7 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
     xᵢ = xₐ
     Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
     tolerence = 1.0e-4;
-    γ = 5
+    γ = 1;
     δᵢ = 15;
     i = 1
     fᵢ = f(xᵢ)
