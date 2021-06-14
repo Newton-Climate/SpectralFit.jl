@@ -338,15 +338,10 @@ function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
     M  = vmr_dry * dry_mass + vmr_H₂O * wet_mass
     vcd_dry = vmr_dry*δp/(M*g₀*100.0^2)   #includes m2->cm2
     vcd_H₂O = vmr_H₂O*δp/(M*g₀*100^2)
-    return vcd_dry + vcd_H₂O
+    return vcd_dry #+ vcd_H₂O
 end
 
-
-    
-
-    
-    
-
+   
 function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real)
     """
 Subsets the FrequencyCombDataset into indivitual measurements 
