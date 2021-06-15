@@ -1,20 +1,12 @@
-using LinearAlgebra, Plots, Distributed, DistributedArrays, DiffResults
-using ProgressMeter, Debugger
+using LinearAlgebra, Distributed, DistributedArrays, DiffResults
+using ProgressMeter
 include("read_data.jl")
 include("forward_model.jl")
+#include("types.jl")
+#include("utils.jl")
 
 
 
-# to store results after fit
-struct InversionResults
-    timestamp
-    x
-    y
-    f
-    χ²
-    S
-    grid
-end
 
 function make_prior_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
     n = length(measurement.intensity)
@@ -203,7 +195,7 @@ end
 
 
         
-function invert_all_files(xₐ::Array{<:Real}, inversion_setup::Dict; path=pwd())
+function process_all_files(xₐ::Array{<:Real}, inversion_setup::Dict; path=pwd())
     files = readdir(path);
     num_files = length(files)
     

@@ -1,11 +1,11 @@
 include("read_data.jl")
-using Interpolations, Statistics
-using ForwardDiff
+include("types.jl")
+include("utils.jl")
+include("constants.jl")
 
-global const H₂O_ind, CH₄_ind, CO₂_ind, HDO_ind = 1, 2, 3, 4;
-global const temperature_ind, pressure_ind = 5, 6
-global const windspeed_ind = 7
-global OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
+using Interpolations, Statistics
+
+
 
 function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
     """
@@ -53,49 +53,23 @@ transmission::Vector: the calculated tranmission
 end
 
 
+"""
+down-scales the co-domain of spectral cross-sections grid to the instrument grid
+"""
 function apply_instrument( input_spectral_grid::Array{<:Real,1},
                                input_spectra::Array{<:Real,1},
                            output_spectral_grid::Array{<:Real,1})
-    """
-down-scales the co-domain of spectral cross-sections grid to the instrument grid
-"""
     
-
     δν = mean(diff(input_spectral_grid));
     ν_min, ν_max = input_spectral_grid[1], input_spectral_grid[end];
     ν = ν_min:δν:ν_max;
     
     itp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
     sitp = scale(itp, ν)
-    output_spectra = sitp(output_spectral_grid)
-       return output_spectra
-#    return itp(output_spectral_grid)
+    return sitp(output_spectral_grid)
 end # end of function apply_instrument
 
-function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
-    """
-calculates the legendre polynomial over domain x::Vector of degree max::Integer
-"""
-    
-    FT = eltype(x)
-    @assert nmax > 1
-    #@assert size(P) == (nmax,length(x))
-    P⁰ = zeros(nmax,length(x));
-   
-    # 0th Legendre polynomial, a constant
-    P⁰[1,:] .= 1;
 
-    # 1st Legendre polynomial, x
-    P⁰[2,:] = x;
-
-    for n=2:nmax-1
-        for i in eachindex(x)
-            l = n-1
-            P⁰[n+1,i] = ((2l + 1) * x[i] * P⁰[n,i] - l * P⁰[n-1,i])/(l+1)
-        end
-    end
-    return P⁰
-end  
 
 function calc_polynomial_term( legendre_polynomial_degree::Integer,
                              shape_parameters::Array{<:Real,1},
@@ -122,19 +96,7 @@ function DopplerShift( relative_speed::Real, spectral_grid::Array{<:Real,1})
     return spectral_grid_out
 end
 
-function assemble_state_vector!(x::AbstractDict)
-    out::Array{Real,1} = []
-    for key in keys(x)
-        out = append!(out, x[key])
-        end
-    return out
-end
 
-function assemble_state_vector!(x::Vector{<:Real}, key_vector::Array{Any,1}, inversion_setup::AbstractDict)
-    out::OrderedDict{Any,Any} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
-    out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
-    return out
-end
 
 function fit_pressure!(x::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::Dict)
     if inversion_setup["use_OCO"] == false && inversion_setup["use_TCCON"] == false
