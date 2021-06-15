@@ -1,4 +1,9 @@
 module SpectralFits
+include("constants.jl")
+include("utils.jl")
+include("read_data.jl")
+include("forward_model.jl")
+include("inversion.jl")
 
 ### export our structs and types
 # spectral-related types 
