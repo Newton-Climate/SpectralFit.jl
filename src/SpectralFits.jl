@@ -4,6 +4,7 @@ include("utils.jl")
 include("read_data.jl")
 include("forward_model.jl")
 include("inversion.jl")
+using OrderedCollections
 
 ### export our structs and types
 # spectral-related types 
