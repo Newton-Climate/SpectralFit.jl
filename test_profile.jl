@@ -13,8 +13,8 @@ num_layers = 20
                         ν_CO2 = (6180, 6260);
 ν_HDO = (6310,6380);
 
+# Read the DCS DAta
 ν_min, ν_max = ν_CO2[1], ν_CO2[2]
-# Read the DCS DAta 
 data = read_DCS_data("../../data/DCSA/DCS_A_1/20160926.h5")
 data = take_time_average(data)
 measurement =  get_measurement(1, data, ν_min, ν_max) 
@@ -32,19 +32,15 @@ CO₂ = get_molecule_info("../CO2_S.data", 2,1,ν_range)
 
 # Calculate the cross-sections and store in dictionary
 molecules = [H₂O, CO₂, CH₄]
+
+# Generate profiles and cross-sections 
 p = collect(range(440, measurement.pressure, length=num_layers))
 T = collect(range(250,measurement.temperature, length=num_layers))
 spec = construct_spectra(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p, T)
-
-# spectral windows for fitting
-# key = spectral window
-# value = what we are retrieving in that window
-spectral_windows = OrderedDict(ν_CH4 => (CH₄,),
-                        ν_CO2 => (CO₂, H₂O, "temperature", "pressure"))
 a = ones(size(p))
 
 
-# define the reetrieval parameters
+# define the reetrieval setup
 inversion_setup = Dict{String,Any}(
     "poly_degree" => 10,
     "fit_pressure" => true,
@@ -67,17 +63,18 @@ f = generate_profile_model(x_true, measurement, spec, inversion_setup);
 τ = f(x_true)
 
 # noise 
-ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
+#ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
 measurement.intensity = τ #+ ϵ
 
 
-
+# define a priori
 xₐ = OrderedDict{Any,Any}(H₂O => 0.02*a,
                           CO₂ => 395e-6*a,
                           CH₄ => 1800e-9*a,
                           "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
 inversion_setup["fit_pressure"] = false
 
+# define prior uncertainty 
 σ = OrderedDict{Any,Any}(H₂O => 0.01*a,
                          CO₂ => 4.0e-6*a,
                          CH₄ => 200e-9*a,
@@ -90,17 +87,19 @@ inversion_setup = push!(inversion_setup, "σ" => σ)
 println("beginning fit")
 f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
 out = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
-#@show out.x[11:20]*1e6
-@show out.χ²
 
+
+# convert output to a dict
 x_retrieved = assemble_state_vector!(out.x, collect(keys(xₐ)), num_layers, inversion_setup)
 
 
-
+# subtract out water to get dry ppm
 x_retrieved[CO₂] = x_retrieved[CO₂] ./ (1 .- x_retrieved[H₂O])
 co2_con = 1e6*x_retrieved[CO₂]
 @show co2_con
 h2o_con = 1e2*x_retrieved[H₂O]
+
+
 ### Plot our results
 p1 = plot(measurement.grid, measurement.intensity, label="observed", color="black")
 plot!(measurement.grid, out.y, label="modelled", color="red")
@@ -118,24 +117,31 @@ plot!(xlabel="ppm CO₂", ylabel="mbar")
 
 
 
+# extract measurement in CH4 range 
 ν_min, ν_max = ν_CH4[1], ν_CH4[2]
 measurement =  get_measurement(1, data, ν_min, ν_max)
 spec = construct_spectra(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p, T)
+
 # Make some synthetic data
 f = generate_profile_model(x_true, measurement, spec, inversion_setup);
 τ = f(x_true)
 
 # noise 
-ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
+#ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
 measurement.intensity = τ #+ ϵ
 inversion_setup["fit_pressure"] = false
-println("beginning fit")
+
+# synthetic data 
 f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
+
+println("beginning fit over CH4 range")
 out2 = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
 
+# convert to Dict 
 x_retrieved = assemble_state_vector!(out2.x, collect(keys(xₐ)), num_layers, inversion_setup)
 
 
+# filter out water vapor for dry ppb 
 x_retrieved[CH₄] = x_retrieved[CH₄] ./ (1 .- x_retrieved[H₂O])
 
 ch4_con = x_retrieved[CH₄]
@@ -167,6 +173,7 @@ savefig("profile_CH4_fit.pdf")
 
 
 ### averaging kernals and error analysis
+# calculate averaging kernal 
 A1 = out.G*out.K
 A2 = out2.G*out2.K
 vcd = make_vcd_profile(p, T, x_retrieved[H₂O])
@@ -174,11 +181,15 @@ h2o_ind = 1:num_layers
 co2_ind = num_layers+1:2*num_layers
 ch4_ind = 2*num_layers+1:3*num_layers
 
+# weighting function 
 H = vcd ./ sum(vcd)
+
+# column weighted averaging kernal 
 cK_h2o = (H'*A2[h2o_ind, h2o_ind])'
 cK_co2 = (H'*A1[co2_ind, co2_ind])'
 cK_ch4 = (H'*A2[ch4_ind, ch4_ind])'
 
+### plot averaging kernals 
 p_co2_ck = plot(cK_co2, p, yflip=true,lw=2, label="cAK for CO2")
 plot!(xlabel="Column averaging kernel", ylabel="Pressure [hPa]", title="Column averaging kernel for CO2")
 
