@@ -4,20 +4,6 @@ include("read_data.jl")
 include("forward_model.jl")
 
 
-
-# to store results after fit
-struct InversionResults
-    timestamp
-    x
-    y
-    f
-    χ²
-    S
-    grid
-    G
-    K
-end
-
 function make_obs_error(measurement::Measurement; a::Float64=0.005092707186368767)
     n = length(measurement.intensity)
     Sₑ = zeros((n,n))
