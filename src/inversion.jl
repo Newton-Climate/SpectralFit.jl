@@ -1,9 +1,5 @@
 using LinearAlgebra, Distributed, DistributedArrays, DiffResults
 using ProgressMeter
-include("read_data.jl")
-include("forward_model.jl")
-#include("types.jl")
-#include("utils.jl")
 
 
 

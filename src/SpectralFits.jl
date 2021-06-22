@@ -1,5 +1,6 @@
 module SpectralFits
 include("constants.jl")
+include("types.jl")
 include("utils.jl")
 include("read_data.jl")
 include("forward_model.jl")

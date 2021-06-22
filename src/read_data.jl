@@ -1,9 +1,6 @@
 using RadiativeTransfer, RadiativeTransfer.Absorption
 using HDF5, Statistics , Interpolations, Dates, NCDatasets
 using OrderedCollections
-include("types.jl") # import structs and types 
-include("constants.jl") # import the physical and physical params
-include("utils.jl") # import some useful funcs 
 
 
 
