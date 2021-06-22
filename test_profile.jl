@@ -50,7 +50,7 @@ inversion_setup = Dict{String,Any}(
 
 
 # define the initial guess 
-x_true = OrderedDict{Any,Any}(H₂O => collect(range(0.01, 0.03, length=num_layers)),
+x_true = OrderedDict{Any,Any}(H₂O => 0*collect(range(0.01, 0.03, length=num_layers)),
                               CO₂ => 1e-6 * collect(range(395, 400, length=num_layers)),
                               CH₄ => 1e-9*collect(range(1800, 2000, length=num_layers)),
                   "pressure" => p,
@@ -68,7 +68,7 @@ measurement.intensity = τ #+ ϵ
 
 
 # define a priori
-xₐ = OrderedDict{Any,Any}(H₂O => 0.02*a,
+xₐ = OrderedDict{Any,Any}(H₂O => 0.00*a,
                           CO₂ => 395e-6*a,
                           CH₄ => 1800e-9*a,
                           "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
@@ -188,9 +188,9 @@ ch4_ind = 2*num_layers+1:3*num_layers
 H = vcd ./ sum(vcd)
 
 # column weighted averaging kernal 
-cK_h2o = (H'*A2[h2o_ind, h2o_ind])'
-cK_co2 = (H'*A1[co2_ind, co2_ind])'
-cK_ch4 = (H'*A2[ch4_ind, ch4_ind])'
+cK_h2o = (H'*A2[h2o_ind, h2o_ind])' ./ H
+cK_co2 = (H'*A1[co2_ind, co2_ind])' ./ H
+cK_ch4 = (H'*A2[ch4_ind, ch4_ind])' ./ H
 
 ### plot averaging kernals 
 p_co2_ck = plot(cK_co2, p, yflip=true,lw=2, label="cAK for CO2")
