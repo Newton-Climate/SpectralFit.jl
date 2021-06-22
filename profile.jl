@@ -81,7 +81,7 @@ function calculate_transmission(xₐ::AbstractDict, spectra::Array{<:AbstractDic
             τ += vcd[i]*xₐ[species][i]*spectra[i][species].cross_sections
         end
     end
-    return τ
+    return exp.(-τ)
 end
 
 
