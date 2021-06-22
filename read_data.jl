@@ -63,6 +63,8 @@ struct InversionResults
     grid
     G
     K
+    Sₑ
+    Sₐ
 end
 
 function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)

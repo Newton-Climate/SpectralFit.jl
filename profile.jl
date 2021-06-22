@@ -170,5 +170,5 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
 
     # Gain matrix
     G = inv(Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹)*Kᵢ'*Sₒ⁻¹
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, G, Kᵢ)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, G, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
 end#function
