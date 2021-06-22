@@ -9,7 +9,7 @@ Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
 function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
 
-    hitran_table = CrossSection.read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_range[1], ν_max=ν_range[end])
+    hitran_table = Absorption.read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
         return MolecularMetaData(filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
@@ -85,13 +85,6 @@ function construct_spectra(H₂O_datafile::String, CH₄_datafile::String, CO₂
     return spectra
 end #function construct_spectra
     
-
-function construct_spectra(molecules::Array{MolecularMetaData,1})
-    spectra = Dict{MolecularMetaData, Molecule}(molecule => calculate_cross_sections(molecule) for molecule in molecules)
-    return spectra
-end
-
-
 
 function construct_spectra!(spectra::Spectra; p::Real=1001, T::Real=290)
     """
