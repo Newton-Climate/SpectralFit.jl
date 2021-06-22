@@ -6,7 +6,7 @@ include("forward_model.jl")
 
 function make_obs_error(measurement::Measurement; a::Float64=0.005092707186368767)
     n = length(measurement.intensity)
-    Sₑ = zeros((n,n))
+    Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(measurement.intensity)
     for i = 1:n
         Sₑ[i,i] = 1/(a*sqrt(base))^2
