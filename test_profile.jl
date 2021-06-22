@@ -1,4 +1,4 @@
-using RadiativeTransfer, OrderedCollections, Plots 
+using RadiativeTransfer, OrderedCollections, Plots, JLD 
 
 include("read_data.jl")
 include("forward_model.jl")
@@ -87,7 +87,7 @@ inversion_setup = push!(inversion_setup, "σ" => σ)
 println("beginning fit")
 f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
 out = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
-
+save("co2_retrieval.jld", "K",out.K, "G",out.G, "Sa",out.Sₐ, "Se",out.Sₑ, "y", out.y, "f",out.f, "grid", out.grid)
 
 # convert output to a dict
 x_retrieved = assemble_state_vector!(out.x, collect(keys(xₐ)), num_layers, inversion_setup)
@@ -136,6 +136,7 @@ f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
 
 println("beginning fit over CH4 range")
 out2 = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
+save("ch4_retrieval.jld", "K",out2.K, "G",out2.G, "Sa",out2.Sₐ, "Se",out2.Sₑ, "y", out2.y, "f",out2.f, "grid", out2.grid)
 
 # convert to Dict 
 x_retrieved = assemble_state_vector!(out2.x, collect(keys(xₐ)), num_layers, inversion_setup)
@@ -177,6 +178,8 @@ savefig("profile_CH4_fit.pdf")
 A1 = out.G*out.K
 A2 = out2.G*out2.K
 vcd = make_vcd_profile(p, T, x_retrieved[H₂O])
+
+num_layers = 20
 h2o_ind = 1:num_layers
 co2_ind = num_layers+1:2*num_layers
 ch4_ind = 2*num_layers+1:3*num_layers
@@ -200,3 +203,7 @@ p_h2o_ck = plot(cK_h2o, p, yflip=true,lw=2, label="cAK for H2O")
 plot!(xlabel="Column averaging kernel", ylabel="Pressure [hPa]", title="Column averaging kernel for H2O")
 plot(p_h2o_ck, p_co2_ck, p_ch4_ck, layout=(1,3))
 savefig("column_averaging_kernal.pdf")
+
+
+### save outputs
+save("co2_retrieval.jld", "K",out.K, "G",out.G, "Sa",out.Sₐ, "Se",out.Sₑ, "y", out.y, "f",out.f)
