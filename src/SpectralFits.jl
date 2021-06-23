@@ -9,7 +9,7 @@ using OrderedCollections
 
 ### export our structs and types
 # spectral-related types 
-export MolecularMetaData, Molecule, Spectra
+export MolecularMetaData, Molecule, Spectra, OrderedDict
 
 
 # Dataset-related types
@@ -36,6 +36,6 @@ export nonlinear_inversion, fit_spectra, run_inversion
 export process_all_files
 
 # some useful funcs fom utils.jl
-export assemble_state_vector!, OCO_spectra, OrderedDict
+export assemble_state_vector!, OCO_spectra
 
 end # module

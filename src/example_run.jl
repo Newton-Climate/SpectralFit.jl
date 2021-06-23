@@ -1,9 +1,10 @@
 using RadiativeTransfer, OrderedCollections
-
+include("types.jl")
+include("constants.jl")
+include("utils.jl")
 include("read_data.jl")
 include("forward_model.jl")
 include("inversion.jl")
-using Plots, Debugger
 
 # define the reetrieval parameters
 inversion_setup = Dict{String,Any}(
@@ -19,7 +20,7 @@ inversion_setup = Dict{String,Any}(
 ν_HDO = (6310,6380);
 
 # Read the DCS DAta 
-data = read_DCS_data("../../data/DCSA/DCS_A_1/20160926.h5")
+data = read_DCS_data("../../../data/DCSA/DCS_A_1/20160926.h5")
 data = take_time_average(data)
 measurement =  get_measurement(1, data, ν_CO2[1], ν_CO2[2]) # get 1 measurement 
 
@@ -27,12 +28,12 @@ measurement =  get_measurement(1, data, ν_CO2[1], ν_CO2[2]) # get 1 measuremen
 ν_range = ν_min:ν_max
 
 # Get the HiTran parameters
-CH₄ = get_molecule_info("../CH4_S.data", 6, 1, ν_range)
+CH₄ = get_molecule_info("../../CH4_S.data", 6, 1, ν_range)
 #_¹³CH₄ = get_molecule_info("../13CH4_S.data", 6, 2, ν_range)
 #H₂O = get_molecule_info("../../data/linelists/2020_experimental/atm.161", 1, 1, ν_range)
-H₂O = get_molecule_info("../H2O_S.data", 1, 1, ν_range)
-CO₂ = get_molecule_info("../CO2_S.data", 2,1,ν_range)
-HDO = get_molecule_info("../HDO_S.data", 1,4,ν_range)
+H₂O = get_molecule_info("../../H2O_S.data", 1, 1, ν_range)
+CO₂ = get_molecule_info("../../CO2_S.data", 2,1,ν_range)
+HDO = get_molecule_info("../../HDO_S.data", 1,4,ν_range)
 
 # Calculate the cross-sections and store in dictionary
 molecules = [H₂O, CH₄, CO₂, HDO]

@@ -41,7 +41,7 @@ transmission::Vector: the calculated tranmission
 """
     
     vcd = measurement.vcd
-    τ = zeros(size(spectra[CO₂].cross_sections));
+    τ = zeros(size(spectra[H₂O].cross_sections));
     for key in keys(spectra)
         τ += vcd * x[key] * spectra[key].cross_sections
         end
@@ -195,10 +195,10 @@ f::Function: the forward model called as f(x::Vector)
         spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
 
         #for the OCO line-list for CO₂
-        if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting temperature with OCO database")
-            spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
-        end
+#        if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
+#        println("fitting temperature with OCO database")
+#            spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
+#        end
         
         # apply Beer's Law
         transmission = calculate_transmission(x, measurement, spectra)

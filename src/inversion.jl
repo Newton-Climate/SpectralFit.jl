@@ -1,4 +1,4 @@
-using LinearAlgebra, Distributed, DistributedArrays, DiffResults
+using LinearAlgebra, Distributed, DistributedArrays, ForwardDiff, DiffResults
 using ProgressMeter
 
 

@@ -1,10 +1,5 @@
 using RadiativeTransfer, OrderedCollections
-
-include("read_data.jl")
-include("forward_model.jl")
-include("inversion.jl")
-using Plots, Debugger
-
+using SpectralFits
 # define the reetrieval parameters
 inversion_setup = Dict{String,Any}(
     "poly_degree" => 20,
@@ -15,7 +10,7 @@ inversion_setup = Dict{String,Any}(
 
 # Just defining the spectral windows for each species
 ν_CH4 = (6055, 6120)
-                        ν_CO2 = (6205, 6255);
+ν_CO2 = (6205, 6255);
 ν_HDO = (6310,6380);
 
 # Read the DCS DAta 
