@@ -4,7 +4,7 @@ include("read_data.jl")
 include("forward_model.jl")
 
 
-function make_obs_error(measurement::Measurement; a::Float64=0.005092707186368767)
+function make_obs_error(measurement::Measurement; a::Float64=0.001832459370853623)
     n = length(measurement.intensity)
     Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(measurement.intensity)
@@ -63,8 +63,9 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ)
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₑ, I)
 end#function
+
 
 function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     
@@ -109,7 +110,7 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
 end#function
 
     

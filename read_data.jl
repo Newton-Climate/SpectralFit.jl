@@ -56,12 +56,11 @@ struct InversionResults
 """
     timestamp
     x
-    y
-    f
+    measurement
+    model
     χ²
     S
     grid
-    G
     K
     Sₑ
     Sₐ
