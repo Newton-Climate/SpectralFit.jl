@@ -1,4 +1,4 @@
-using RadiativeTransfer, OrderedCollections, Plots, JLD 
+using RadiativeTransfer, OrderedCollections, Plots, JLD, LaTeXStrings
 
 include("read_data.jl")
 include("forward_model.jl")
@@ -50,7 +50,7 @@ inversion_setup = Dict{String,Any}(
 
 
 # define the initial guess 
-x_true = OrderedDict{Any,Any}(H₂O => 0*collect(range(0.01, 0.03, length=num_layers)),
+x_true = OrderedDict{Any,Any}(H₂O => collect(range(0.01, 0.03, length=num_layers)),
                               CO₂ => 1e-6 * collect(range(395, 400, length=num_layers)),
                               CH₄ => 1e-9*collect(range(1800, 2000, length=num_layers)),
                   "pressure" => p,
@@ -63,14 +63,14 @@ f = generate_profile_model(x_true, measurement, spec, inversion_setup);
 τ = f(x_true)
 
 # noise 
-#ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
-measurement.intensity = τ #+ ϵ
+ϵ = 0.001832459370853623*sqrt(mean(τ))* randn.(length(τ))
+measurement.intensity = τ + ϵ
 
 
 # define a priori
-xₐ = OrderedDict{Any,Any}(H₂O => 0.00*a,
-                          CO₂ => 395e-6*a,
-                          CH₄ => 1800e-9*a,
+xₐ = OrderedDict{Any,Any}(H₂O => 0.02*a,
+                          CO₂ => 397e-6*a,
+                          CH₄ => 1900e-9*a,
                           "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
 inversion_setup["fit_pressure"] = false
 
@@ -94,7 +94,7 @@ x_retrieved = assemble_state_vector!(out.x, collect(keys(xₐ)), num_layers, inv
 
 
 # subtract out water to get dry ppm
-x_retrieved[CO₂] = x_retrieved[CO₂] ./ (1 .- x_retrieved[H₂O])
+#x_retrieved[CO₂] = x_retrieved[CO₂] ./ (1 .- x_retrieved[H₂O])
 co2_con = 1e6*x_retrieved[CO₂]
 @show co2_con
 h2o_con = 1e2*x_retrieved[H₂O]
@@ -110,10 +110,10 @@ plot(p1, p2, layout=(2,1))
 savefig("profile_CO2_fit.pdf")
 
 ### plot the profile
-p3 = plot(1e6*xₐ[CO₂], p, label="a priori", yaxis=:flip, lw=2, color="green")
-plot!(1e6*x_true[CO₂], p, label="truth", yaxis=:flip, lw=2, color="black")
-plot!(1e6*x_retrieved[CO₂], p, label="retrieved", lw=2, yaxis=:flip, color="red")
-plot!(xlabel="ppm CO₂", ylabel="mbar")
+p3 = plot(1e6*xₐ[CO₂], p, yaxis=:flip, lw=2, color="green")
+plot!(1e6*x_true[CO₂], p, yaxis=:flip, lw=2, color="black")
+plot!(1e6*x_retrieved[CO₂], p, lw=2, yaxis=:flip, color="red")
+plot!(xlabel=L"\textrm{[CO}_2\textrm{] ppm}", ylabel="mbar", legend=false)
 
 
 
@@ -143,24 +143,25 @@ x_retrieved = assemble_state_vector!(out2.x, collect(keys(xₐ)), num_layers, in
 
 
 # filter out water vapor for dry ppb 
-x_retrieved[CH₄] = x_retrieved[CH₄] ./ (1 .- x_retrieved[H₂O])
+#x_retrieved[CH₄] = x_retrieved[CH₄] ./ (1 .- x_retrieved[H₂O])
 
 ch4_con = x_retrieved[CH₄]
 @show 1e9*x_retrieved[CH₄]
 
 # plot water 
-p4 = plot(1e2*xₐ[H₂O], p, label="a priori", yaxis=:flip, lw=2, color="green")
-plot!(1e2*x_true[H₂O], p, label="truth", yaxis=:flip, lw=2, color="black")
-plot!(1e2*x_retrieved[H₂O], p, label="retrieved", lw=2, yaxis=:flip, color="red")
-plot!(xlabel="percent H₂O", ylabel="mbar")
+p4 = plot(1e2*xₐ[H₂O], p, yaxis=:flip, lw=2, color="green")
+plot!(1e2*x_true[H₂O], p, yaxis=:flip, lw=2, color="black")
+plot!(1e2*x_retrieved[H₂O], p, lw=2, yaxis=:flip, color="red")
+plot!(xlabel=L"\textrm{[H}_2\textrm{O] percent}", ylabel="mbar", legend=false)
 
 
 p5 = plot(1e9*xₐ[CH₄], p, label="a priori", yaxis=:flip, lw=2, color="green")
 plot!(1e9*x_true[CH₄], p, label="truth", yaxis=:flip, lw=2, color="black")
 plot!(1e9*x_retrieved[CH₄], p, label="retrieved", lw=2, yaxis=:flip, color="red")
-plot!(xlabel="ppb CH₄", ylabel="mbar")
+plot!(xlabel=L"\textrm{[CH}_4\textrm{] ppb}", ylabel="mbar")
 plot(p3, p4, p5, layout=(1,3))
-savefig("vertical_profile.pdf")
+plot!(fontfamily="serif-roman", legendfont=font("Computer Modern", 7))
+savefig("vertical_profile_with_noise.pdf")
 #savefig("profile_CO2.pdf")
 
 ### Plot our results
@@ -186,6 +187,14 @@ ch4_ind = 2*num_layers+1:3*num_layers
 
 # weighting function 
 H = vcd ./ sum(vcd)
+
+co2_degrees = tr(A1[co2_ind,co2_ind])
+h2o_degrees = tr(A1[h2o_ind, h2o_ind])
+ch4_degrees = tr(A2[ch4_ind, ch4_ind])
+
+@show co2_degrees
+@show h2o_degrees
+@show ch4_degrees
 
 # column weighted averaging kernal 
 cK_h2o = (H'*A2[h2o_ind, h2o_ind])' ./ H

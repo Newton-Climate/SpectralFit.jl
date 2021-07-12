@@ -4,14 +4,14 @@ include("read_data.jl")
 include("forward_model.jl")
 include("inversion.jl")
 include("profile.jl")
-using Plots, Debugger
+using Plots
 
 # define the reetrieval parameters
 inversion_setup = Dict{String,Any}(
     "poly_degree" => 20,
     "fit_pressure" => true,
     "fit_temperature" => true,
-    "use_OCO" => true,
+    "use_OCO" => false,
 "use_TCCON" => false)
 
 # Just defining the spectral windows for each species
