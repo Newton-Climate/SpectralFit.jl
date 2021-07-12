@@ -41,7 +41,8 @@ transmission::Vector: the calculated tranmission
 """
     
     vcd = measurement.vcd
-    τ = zeros(size(spectra[H₂O].cross_sections));
+    k = collect(keys(spectra))
+    τ = zeros(size(spectra[k[1]].cross_sections));
     for key in keys(spectra)
         τ += vcd * x[key] * spectra[key].cross_sections
         end
@@ -204,7 +205,7 @@ f::Function: the forward model called as f(x::Vector)
         transmission = calculate_transmission(x, measurement, spectra)
 
         # down-sample to instrument grid 
-        transmission = apply_instrument(collect(spectra[CO₂].grid), transmission, measurement.grid)
+        transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline 
         shape_parameters = x["shape_parameters"]
