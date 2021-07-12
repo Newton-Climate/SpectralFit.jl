@@ -66,9 +66,8 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
 end#function
 
-function nonlinear_inversion(x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
+function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     
-    f = generate_forward_model(x₀, measurement, spectra, inversion_setup);
     Sₑ = make_prior_error(measurement, a=0.0019656973992654737);
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
