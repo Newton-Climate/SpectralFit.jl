@@ -1,11 +1,8 @@
 using RadiativeTransfer, OrderedCollections
 
 
-include("read_data.jl")
-include("forward_model.jl")
-include("inversion.jl")
-include("profile.jl")
-using Plots
+
+using Plots, SpectralFits
 
 # define the reetrieval parameters
 inversion_setup = Dict{String,Any}(
@@ -58,7 +55,7 @@ xₐ = OrderedDict{Any,Any}(H₂O => 0.01,
 # just testing the fit itself
 f = generate_forward_model(xₐ, measurement, spec, inversion_setup);
 tau = f(assemble_state_vector!(xₐ))
-#@time nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
+nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
 
 # test the full code
 #run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
