@@ -4,9 +4,9 @@ using ProgressMeter
 
 
 
-function make_prior_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
+function make_obs_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
     n = length(measurement.intensity)
-    Sₑ = zeros((n,n))
+    Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(measurement.intensity)
     for i = 1:n
         Sₑ[i,i] = 1/(a*sqrt(base))^2
@@ -14,9 +14,9 @@ function make_prior_error(measurement::Measurement; a::Float64=0.3*0.01611750368
     return Sₑ
 end
 
-function make_prior_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
+function make_obs_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
     n = length(measurement.intensity)
-    Sₑ = zeros((n,n))
+    Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(dataset.intensity)
     for i = 1:n
         Sₑ[i,i] = 1/(a*sqrt(base))^2
@@ -27,7 +27,7 @@ end
 
 function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
     f = generate_forward_model(measurement, spectra, inversion_setup);
-    Sₑ = make_prior_error(measurement);
+    Sₑ = make_obs_error(measurement);
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
     xᵢ = x₀;
@@ -68,7 +68,7 @@ end#function
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     
-    Sₑ = make_prior_error(measurement, a=0.0019656973992654737);
+    Sₑ = make_obs_error(measurement, a=0.0019656973992654737);
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     kᵢ = zeros(length(y), length(x₀));
