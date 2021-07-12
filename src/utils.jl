@@ -67,6 +67,18 @@ function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
 end #function find_indexes
 
 
+function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
+    δp = δp*100 # convert from mbar to pascals 
+    dry_mass = 28.9647e-3  /Nₐ  # in kg/molec, weighted average for N2 and O2
+    wet_mass = 18.01528e-3 /Nₐ  # just H2O
+    ratio = dry_mass/wet_mass
+    vmr_dry = 1 - vmr_H₂O
+    M  = vmr_dry * dry_mass + vmr_H₂O * wet_mass
+    vcd_dry = vmr_dry*δp/(M*g₀*100.0^2)   #includes m2->cm2
+    vcd_H₂O = vmr_H₂O*δp/(M*g₀*100^2)
+    return vcd_dry #+ vcd_H₂O
+end
+
 function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)
     """
 Calculates the vertical column density

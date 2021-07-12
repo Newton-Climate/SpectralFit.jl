@@ -8,18 +8,6 @@ global const windspeed_ind = 7
 global OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
 
 function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
-    """
-Calculates the transmission given Beer's Law
-
-- Arguements
-    1. xₐ::Vector: The state vector containing the parametres to fit
-2. measurement::Measurement: a Measurement type subsetted from the Dataset type
-3. spectra::Spectra: A Spectra type containing the Molecules type and thus cross-sections
-4. inversion_setup::AbstractDict: A dictionary contaiing the flags for the inversion
-
-- returns:
-transmission::Vector: the calculated tranmission
-"""
 
     vcd = measurement.vcd
     H₂O_vmr, H₂O_cs = x[H₂O_ind], spectra.H₂O.cross_sections
@@ -31,21 +19,11 @@ transmission::Vector: the calculated tranmission
 end
 
 function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict)
-    """
-    Calculates the transmission given Beer's Law
-
-- Arguements
-    1. xₐ::AbstractDict: The state vector containing the parametres to fit
-2. measurement::Measurement: a Measurement type subsetted from the Dataset type
-3. spectra::AbstractDict: A dictionary containing the Molecules type and thus cross-sections
-4. inversion_setup::AbstractDict: A dictionary contaiing the flags for the inversion
-
-- returns:
-transmission::Vector: the calculated tranmission
-"""
     
     vcd = measurement.vcd
-    τ = zeros(size(spectra[CO₂].cross_sections));
+    k = collect(keys(spectra))
+    τ = zeros(size(spectra[k[1]].cross_sections));
+    
     for key in keys(spectra)
         τ += vcd * x[key] * spectra[key].cross_sections
         end
@@ -65,8 +43,9 @@ down-scales the co-domain of spectral cross-sections grid to the instrument grid
     ν_min, ν_max = input_spectral_grid[1], input_spectral_grid[end];
     ν = ν_min:δν:ν_max;
     
-    itp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
-    sitp = scale(itp, ν)
+    #itp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
+    #sitp = scale(itp, ν)
+    sitp = LinearInterpolation(ν, input_spectra)
     output_spectra = sitp(output_spectral_grid)
        return output_spectra
 #    return itp(output_spectral_grid)
@@ -78,8 +57,12 @@ calculates the legendre polynomial over domain x::Vector of degree max::Integer
 """
     
     FT = eltype(x)
-    @assert nmax > 1
+    #@assert nmax > 1
     #@assert size(P) == (nmax,length(x))
+    if nmax <= 1
+        return 1.0
+    end
+    
     P⁰ = zeros(nmax,length(x));
    
     # 0th Legendre polynomial, a constant
@@ -98,12 +81,15 @@ calculates the legendre polynomial over domain x::Vector of degree max::Integer
 end  
 
 function calc_polynomial_term( legendre_polynomial_degree::Integer,
-                             shape_parameters::Array{<:Real,1},
+                             shape_parameters::Union{Real, Array{<:Real,1}, Nothing},
                                wavenumber_grid_length::Integer)
     """
 calculates the Legendre Polynomial Coefficients and weights by the shape parameters
 """
     
+    if legendre_polynomial_degree == 0 || legendre_polynomial_degree == 1
+        return ones(wavenumber_grid_length)'
+    end
     
     x = collect(range(-1, stop=1, length=wavenumber_grid_length));
     polynomial_term = Array{Float64}(undef, length(x))
@@ -143,7 +129,7 @@ function fit_pressure!(x::AbstractDict, measurement::Measurement, spectra::Abstr
         println(typeof(x["pressure"]))
         spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
     elseif inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting pressure with OCO database")
+        #println("fitting pressure with OCO database")
         spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, measurement.temperature, x["pressure"])
     else
         println("This wavenubmer range is out of the OCO or TCCON database range. Using HiTran")
@@ -233,12 +219,19 @@ f::Function: the forward model called as f(x::Vector)
         # convert the state vector to a dict with labelled fields
         x = assemble_state_vector!(x, x₀_fields, inversion_setup)
 
-        # update the cross-sections given pressure and temperature 
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+        # update the cross-sections given pressure and temperature
+        if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+        elseif inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"] == false
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
+        elseif inversion_setup["fit_temperature"] || inversion_setup["fit_pressure"] == false
+            spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
+        end
+        
 
         #for the OCO line-list for CO₂
         if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting temperature with OCO database")
+        #println("fitting temperature with OCO database")
             spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
         end
         
@@ -246,7 +239,7 @@ f::Function: the forward model called as f(x::Vector)
         transmission = calculate_transmission(x, measurement, spectra)
 
         # down-sample to instrument grid 
-        transmission = apply_instrument(collect(spectra[CO₂].grid), transmission, measurement.grid)
+        transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline 
         shape_parameters = x["shape_parameters"]
@@ -256,3 +249,5 @@ f::Function: the forward model called as f(x::Vector)
     end
     return f
 end
+
+

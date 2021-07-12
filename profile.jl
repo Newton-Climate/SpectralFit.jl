@@ -1,21 +1,20 @@
-include("read_data.jl")
-include("forward_model.jl")
-using LinearAlgebra
 
-function construct_spectra(molecules::Array{MolecularMetaData,1}, p::Array{<:Real,1}, T::Array{<:Real,1}; ν_min=6000, ν_max=6400, δν=0.01)
-    n_levels = length(p)
+using LinearAlgebra, SpectralFits
+
+function construct_spectra(molecules::Array{MolecularMetaData,1}; p::Array{<:Real,1}=collect(range(400, 800, length=20)), T::Array{<:Real,1}=collect(range(240, 290, length=20)), ν_min=6000, ν_max=6400, δν=0.01)
+    n_levels = length(p) 
     spectra = Array{OrderedDict}(undef, n_levels)
     for i=1:length(p)
-        spectra[i] = construct_spectra(molecules, p=p[i], T=T[i], ν_min=ν_min, δν=δν, ν_max=ν_max)
+        spectra[i] = SpectralFits.construct_spectra(molecules, p=p[i], T=T[i], ν_min=ν_min, δν=δν, ν_max=ν_max)
     end
     return spectra
 end
 
 
-function construct_spectra!(spectra::Array{OrderedDict,1}, p::Array{<:Real,1}, T::Array{<:Real,1})
+function construct_spectra!(spectra::Array{OrderedDict,1}; p::Array{<:Real,1}=collect(range(450,800, length=20)), T::Array{<:Real,1}=collect(range(240, 290, length=20)))
     num_levels = length(p)
     for i=1:num_levels
-        spectra[i] = construct_spectra!(spectra[i], p=p[i], T=T[i])
+        spectra[i] = SpectralFits.construct_spectra!(spectra[i], p=p[i], T=T[i])
     end
     return spectra
 end
@@ -39,12 +38,20 @@ function assemble_state_vector!(x::Array{<:Real,1}, fields::Array{Any,1}, num_le
 end
 
 
-function make_prior_error(xₐ::Array{<:Real,1})
-    n = length(xₐ)
+
+function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
+    if typeof(σ) <: AbstractDict
+        σ = assemble_state_vector!(σ)
+    end
+    
+    n = length(σ)
     Sₐ⁻¹ = zeros(n,n)
-    x = 0.01*xₐ
-    for i = 1:n
-        Sₐ⁻¹[i,i] = 1/x[i]^2
+    x = 1 ./ σ.^2
+   # bad_idx = findall(x.==Inf)
+     #[x[i] = 1/1.0e10 for i in bad_idx]
+
+    for i=1:n
+        Sₐ⁻¹[i,i] = x[i]
     end
     return Sₐ⁻¹
 end
@@ -66,7 +73,9 @@ end
     
 
 function calculate_transmission(xₐ::AbstractDict, spectra::Array{<:AbstractDict,1})
-    vcd = make_vcd_profile(p, T, xₐ[H₂O])
+
+    vcd = 2*make_vcd_profile(p, T, xₐ[H₂O])
+
     n_levels = length(p)
     τ = zeros(size(spectra[1][CO₂].grid))
     for i = 1:n_levels
@@ -74,7 +83,7 @@ function calculate_transmission(xₐ::AbstractDict, spectra::Array{<:AbstractDic
             τ += vcd[i]*xₐ[species][i]*spectra[i][species].cross_sections
         end
     end
-    return τ
+    return exp.(-τ)
 end
 
 
@@ -93,7 +102,7 @@ function generate_profile_model(xₐ::AbstractDict, measurement::Measurement, sp
         if inversion_setup["fit_pressure"]
             println("fitting p and T")
             p, T = x["pressure"], x["temperature"]
-                    spectra = construct_spectra!(spectra, p, T)
+                    spectra = construct_spectra!(spectra, p=p, T=T)
         end
         
 
@@ -112,24 +121,24 @@ end
 
 function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
     
-    #
-    Sₒ⁻¹ = I #make_obs_error(measurement, a=0.0019656973992654737);
+
+    Sₒ⁻¹ = make_obs_error(measurement, a=0.0019656973992654737);
     
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     Kᵢ = zeros(length(y), length(x₀));
     xₐ = assemble_state_vector!(x₀);
     xᵢ = xₐ
-    Sₐ⁻¹ = I #make_prior_error(xᵢ)
+    Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
     tolerence = 1.0e-4;
-    γ = 1
-    δᵢ = 10;
+    γ = 1;
+    δᵢ = 15;
     i = 1
     fᵢ = f(xᵢ)
     
 
     # begin the non-linear fit
-    while i<10 && δᵢ>tolerence
+    while i<15 && δᵢ>tolerence
 
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
@@ -140,14 +149,10 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
         # Gauss-Newton Algorithm
         lhs = (Sₐ⁻¹ + Kᵢ'*Sₒ⁻¹*Kᵢ + γ*Sₐ⁻¹)
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
-        Δx = pinv(lhs)*rhs;
-        @show Δx[1:20]
+        Δx = lhs\rhs
+
         x = xᵢ + Δx; # reassign state vector for next iteration
         xᵢ = x
-        @show lhs[1,1]
-        @show rhs[1]
-        @show Kᵢ[1,1]
-        #x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
@@ -160,6 +165,9 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+
+    # Gain matrix
+    G = inv(Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹)*Kᵢ'*Sₒ⁻¹
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, G, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
 end#function

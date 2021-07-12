@@ -1,16 +1,23 @@
 using RadiativeTransfer, OrderedCollections
-using SpectralFits
+
+
+include("read_data.jl")
+include("forward_model.jl")
+include("inversion.jl")
+include("profile.jl")
+using Plots
+
 # define the reetrieval parameters
 inversion_setup = Dict{String,Any}(
     "poly_degree" => 20,
     "fit_pressure" => true,
     "fit_temperature" => true,
-    "use_OCO" => true,
+    "use_OCO" => false,
 "use_TCCON" => false)
 
 # Just defining the spectral windows for each species
 ν_CH4 = (6055, 6120)
-ν_CO2 = (6205, 6255);
+                        ν_CO2 = (6205, 6255);
 ν_HDO = (6310,6380);
 
 # Read the DCS DAta 
@@ -49,8 +56,9 @@ xₐ = OrderedDict{Any,Any}(H₂O => 0.01,
                   "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
 
 # just testing the fit itself
-out = nonlinear_inversion(xₐ, measurement, spec, inversion_setup)
+f = generate_forward_model(xₐ, measurement, spec, inversion_setup);
+tau = f(assemble_state_vector!(xₐ))
+#@time nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
 
 # test the full code
 #run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
-@show out.χ²

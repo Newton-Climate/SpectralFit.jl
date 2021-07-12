@@ -6,8 +6,8 @@ SpectralFits.jl is a modern and flexible spectral fitting routine for atmospheri
 
 ```
 using Pkg
-Pkg.add(url="https://github.com/Newton-Climate/SpectralFit.jl")
-Pkg.instantiate()
+Pkg.add(url="https://github.com/Newton-Climate/SpectralFit.jl.git")
+using SpectralFits
 ```
 
 ## Example Run
