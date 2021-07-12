@@ -8,18 +8,6 @@ global const windspeed_ind = 7
 global OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
 
 function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
-    """
-Calculates the transmission given Beer's Law
-
-- Arguements
-    1. xₐ::Vector: The state vector containing the parametres to fit
-2. measurement::Measurement: a Measurement type subsetted from the Dataset type
-3. spectra::Spectra: A Spectra type containing the Molecules type and thus cross-sections
-4. inversion_setup::AbstractDict: A dictionary contaiing the flags for the inversion
-
-- returns:
-transmission::Vector: the calculated tranmission
-"""
 
     vcd = measurement.vcd
     H₂O_vmr, H₂O_cs = x[H₂O_ind], spectra.H₂O.cross_sections
@@ -31,21 +19,11 @@ transmission::Vector: the calculated tranmission
 end
 
 function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict)
-    """
-    Calculates the transmission given Beer's Law
-
-- Arguements
-    1. xₐ::AbstractDict: The state vector containing the parametres to fit
-2. measurement::Measurement: a Measurement type subsetted from the Dataset type
-3. spectra::AbstractDict: A dictionary containing the Molecules type and thus cross-sections
-4. inversion_setup::AbstractDict: A dictionary contaiing the flags for the inversion
-
-- returns:
-transmission::Vector: the calculated tranmission
-"""
     
     vcd = measurement.vcd
-    τ = zeros(size(spectra[CO₂].cross_sections));
+    k = collect(keys(spectra))
+    τ = zeros(size(spectra[k[1]].cross_sections));
+    
     for key in keys(spectra)
         τ += vcd * x[key] * spectra[key].cross_sections
         end
@@ -241,8 +219,15 @@ f::Function: the forward model called as f(x::Vector)
         # convert the state vector to a dict with labelled fields
         x = assemble_state_vector!(x, x₀_fields, inversion_setup)
 
-        # update the cross-sections given pressure and temperature 
-        @time spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+        # update the cross-sections given pressure and temperature
+        if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+        elseif inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"] == false
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
+        elseif inversion_setup["fit_temperature"] || inversion_setup["fit_pressure"] == false
+            spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
+        end
+        
 
         #for the OCO line-list for CO₂
         if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
@@ -254,7 +239,7 @@ f::Function: the forward model called as f(x::Vector)
         transmission = calculate_transmission(x, measurement, spectra)
 
         # down-sample to instrument grid 
-        transmission = apply_instrument(collect(spectra[CO₂].grid), transmission, measurement.grid)
+        transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline 
         shape_parameters = x["shape_parameters"]
