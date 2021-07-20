@@ -66,7 +66,7 @@ function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}, vmr_H₂O::Arr
     half_levels = half_pressure_levels(p)
     δp = half_levels[2:end] - half_levels[1:end-1]
     input_variables = zip(δp,T,vmr_H₂O)
-    vcd = map(x -> vcd_pressure(x[1], x[2], x[3]), input_variables)
+    vcd = map(x -> SpectralFits.vcd_pressure(x[1], x[2], x[3]), input_variables)
     return vcd
 end
 
@@ -122,7 +122,7 @@ end
 function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
     
 
-    Sₒ⁻¹ = make_obs_error(measurement, a=0.0019656973992654737);
+    Sₒ⁻¹ = SpectralFits.make_prior_error(measurement, a=0.0019656973992654737);
     
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;

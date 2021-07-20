@@ -1,6 +1,6 @@
 using RadiativeTransfer, OrderedCollections, Plots, JLD, LaTeXStrings
-using SpectralFits
-include("profile.jl")
+using SpectralFits, Statistics
+
 
 
 # define the reetrieval parameters
@@ -8,9 +8,10 @@ inversion_setup = Dict{String,Any}(
     "poly_degree" => 20,
     "fit_pressure" => true,
     "fit_temperature" => true,
-    "use_OCO" => true,
+    "use_OCO" => false,
 "use_TCCON" => false)
 num_windows = 4
+num_layers = 20
 # Just defining the spectral windows for each species
 ν_CH4 = (6055, 6120)
                         ν_CO2 = (6205, 6255);
@@ -20,59 +21,22 @@ num_windows = 4
 # Read the DCS DAta 
 data = read_DCS_data("../../data/DCSA/DCS_A_1/20160926.h5")
 data = take_time_average(data)
-measurement =  get_measurement(1, data, ν_min, ν_max) 
-ν_range = ν_min:ν_max
 
-num_layers = 20
+p = collect(range(500, 850, length=num_layers))
+T = collect(range(250, 285, length=num_layers))
+
+measurement =  get_measurement(1, data, ν_min, ν_max, p, T) 
+ν_range = 6000:6400
 
 # Get the HiTran parameters
 CH₄ = get_molecule_info("../CH4_S.data", 6, 1, ν_range)
-#_¹³CH₄ = get_molecule_info("../13CH4_S.data", 6, 2, ν_range)
-#H₂O = get_molecule_info("../../data/linelists/2020_experimental/atm.161", 1, 1, ν_range)
 H₂O = get_molecule_info("../H2O_S.data", 1, 1, ν_range)
 CO₂ = get_molecule_info("../CO2_S.data", 2,1,ν_range)
-#HDO = get_molecule_info("../HDO_S.data", 1,4,ν_range)
 
 # Calculate the cross-sections and store in dictionary
 molecules = [H₂O, CH₄, CO₂]
-p = collect(range(500, measurement.pressure, length=num_layers))
-T = collect(range(250,measurement.temperature, length=num_layers))
-spec = construct_spectra(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p=p, T=T)
-
-# spectral windows for fitting
-# key = spectral window
-# value = what we are retrieving in that window
-spectral_windows = OrderedDict(ν_CH4 => (CH₄,),
-                        ν_CO2 => (CO₂, H₂O, "temperature", "pressure"))
+spec = construct_spectra_by_layer(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p=p, T=T)
 a = ones(size(p))
-
-# define the initial guess 
-xₐ = OrderedDict{Any,Any}(H₂O => 0.01*a,
-    CH₄ => 2000e-9*a,
-                  CO₂ => 400e-6*a,
-#                  HDO => 0.0001*a,
-                  "pressure" => p,
-                  "temperature" => T,
-                  "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
-
-# just testing the fit itself
-f = generate_profile_model(xₐ, measurement, spec, inversion_setup);
-τ = f(xₐ)
-measurement.intensity = τ
-
-
-xₐ = OrderedDict{Any,Any}(H₂O => 0.03*a,
-    CH₄ => 2400e-9*a,
-                  CO₂ => 400e-6*a,
-#                  HDO => 0.0001*a,
-#                  "pressure" => p,
-#                  "temperature" => T,
-                  "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
-inversion_setup["fit_pressure"] = false
-println("beginning fit")
-f = generate_profile_model(xₐ, measurement, spec, inversion_setup);
-out = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
-
 
 
 # define the initial guess 
@@ -83,6 +47,32 @@ x_true = OrderedDict{Any,Any}(H₂O => collect(range(0.01, 0.03, length=num_laye
                   "temperature" => T,
                               "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
 
+# define the initial guess 
+xₐ = OrderedDict{Any,Any}(H₂O => 0.01*a,
+    CH₄ => 2000e-9*a,
+                  CO₂ => 397e-6*a,
+                  "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
+
+# just testing the fit itself
+f = generate_profile_model(x_true, measurement, spec, inversion_setup);
+τ = f(x_true)
+measurement.intensity = τ
+
+
+# define prior uncertainty 
+σ = OrderedDict{Any,Any}(H₂O => 0.01*a,
+                         CO₂ => 4.0e-6*a,
+                         CH₄ => 200e-9*a,
+                         "shape_parameters" => ones(inversion_setup["poly_degree"]))
+inversion_setup = push!(inversion_setup, "σ" => σ)
+
+inversion_setup["fit_pressure"] = false
+inversion_setup["fit_temperature"] = false
+
+println("beginning fit")
+f = generate_profile_model(xₐ, measurement, spec, inversion_setup);
+out = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
+
 
 # Make some synthetic data 
 f = generate_profile_model(x_true, measurement, spec, inversion_setup);
@@ -92,34 +82,10 @@ f = generate_profile_model(x_true, measurement, spec, inversion_setup);
 ϵ = 0.001832459370853623*sqrt(mean(τ))* randn.(length(τ))
 measurement.intensity = τ + ϵ
 
-
-# define a priori
-xₐ = OrderedDict{Any,Any}(H₂O => 0.02*a,
-                          CO₂ => 397e-6*a,
-                          CH₄ => 1900e-9*a,
-                          "shape_parameters" => [maximum(measurement.intensity); zeros(inversion_setup["poly_degree"]-1)])
-inversion_setup["fit_pressure"] = false
-
-# define prior uncertainty 
-σ = OrderedDict{Any,Any}(H₂O => 0.01*a,
-                         CO₂ => 4.0e-6*a,
-                         CH₄ => 200e-9*a,
-                         "shape_parameters" => ones(inversion_setup["poly_degree"]))
-#1e-10*ones(inversion_setup["poly_degree"])) 
-inversion_setup = push!(inversion_setup, "σ" => σ)
-
-
-
-println("beginning fit")
-f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
-out = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
-save("co2_retrieval.jld", "K",out.K, "G",out.G, "Sa",out.Sₐ, "Se",out.Sₑ, "y", out.y, "f",out.f, "grid", out.grid)
+save("co2_retrieval.jld", "K",out.K, "Sa",out.Sₐ, "Se",out.Sₑ, "measurement", out.measurement, "model",out.model, "grid", out.grid)
 
 # convert output to a dict
 x_retrieved = assemble_state_vector!(out.x, collect(keys(xₐ)), num_layers, inversion_setup)
-
-
-
 
 co2_con = 1e6*x_retrieved[CO₂]
 @show co2_con
@@ -128,10 +94,10 @@ h2o_con = 1e2*x_retrieved[H₂O]
 
 ### Plot our results
 p1 = plot(measurement.grid, measurement.intensity, label="observed", color="black")
-plot!(measurement.grid, out.y, label="modelled", color="red")
+plot!(measurement.grid, out.model, label="modelled", color="red")
 plot!(xlabel="wave-number", ylabel="intensity")
 
-p2=plot(measurement.grid, measurement.intensity - out.y, label="observed - modelled")
+p2=plot(measurement.grid, measurement.intensity - out.model, label="observed - modelled")
 plot(p1, p2, layout=(2,1))
 savefig("profile_CO2_fit.pdf")
 
@@ -145,8 +111,8 @@ plot!(xlabel=L"\textrm{[CO}_2\textrm{] ppm}", ylabel="mbar", legend=false)
 
 # extract measurement in CH4 range 
 ν_min, ν_max = ν_CH4[1], ν_CH4[2]
-measurement =  get_measurement(1, data, ν_min, ν_max)
-spec = construct_spectra(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p, T)
+measurement =  get_measurement(1, data, ν_min, ν_max, p, T)
+spec = construct_spectra_by_layer(molecules, ν_min=ν_min-1, δν=0.003, ν_max=ν_max+1, p=p, T=T)
 
 # Make some synthetic data
 f = generate_profile_model(x_true, measurement, spec, inversion_setup);
@@ -156,13 +122,10 @@ f = generate_profile_model(x_true, measurement, spec, inversion_setup);
 #ϵ = 0.005092707186368767*sqrt(mean(τ))* randn.(length(τ))
 measurement.intensity = τ #+ ϵ
 inversion_setup["fit_pressure"] = false
-
-# synthetic data 
-f = generate_profile_model(xₐ, measurement, spec, inversion_setup)
-
 println("beginning fit over CH4 range")
+f = generate_profile_model(xₐ, measurement, spec, inversion_setup);
 out2 = nonlinear_inversion(f, xₐ, measurement, spec, inversion_setup)
-save("ch4_retrieval.jld", "K",out2.K, "G",out2.G, "Sa",out2.Sₐ, "Se",out2.Sₑ, "y", out2.y, "f",out2.f, "grid", out2.grid)
+save("ch4_retrieval.jld", "K", out2.K, "Sa", out2.Sₐ, "Se",out2.Sₑ, "measurement", out2.measurement, "model",out2.model, "grid", out2.grid)
 
 # convert to Dict 
 x_retrieved = assemble_state_vector!(out2.x, collect(keys(xₐ)), num_layers, inversion_setup)
@@ -190,18 +153,20 @@ savefig("vertical_profile_with_noise.pdf")
 
 ### Plot our results
 p6 = plot(measurement.grid, measurement.intensity, label="observed", color="black")
-plot!(measurement.grid, out2.y, label="modelled", color="red")
+plot!(measurement.grid, out2.model, label="modelled", color="red")
 plot!(xlabel="wave-number", ylabel="intensity")
 
-p7=plot(measurement.grid, measurement.intensity - out2.y, label="observed - modelled")
+p7=plot(measurement.grid, measurement.intensity - out2.model, label="observed - modelled")
 plot(p6, p7, layout=(2,1))
 savefig("profile_CH4_fit.pdf")
 
 
 ### averaging kernals and error analysis
-# calculate averaging kernal 
-A1 = out.G*out.K
-A2 = out2.G*out2.K
+# calculate averaging kernal
+G1 = calc_gain_matrix(out)
+G2 = calc_gain_matrix(out2)
+A1 = G1*out.K
+A2 = G2*out2.K
 vcd = make_vcd_profile(p, T, x_retrieved[H₂O])
 
 num_layers = 20
@@ -236,8 +201,4 @@ p_h2o_ck = plot(cK_h2o, p, yflip=true,lw=2, label="cAK for H2O")
 plot!(xlabel="Column averaging kernel", ylabel="Pressure [hPa]", title="Column averaging kernel for H2O")
 plot(p_h2o_ck, p_co2_ck, p_ch4_ck, layout=(1,3))
 savefig("column_averaging_kernal.pdf")
-
-
-### save outputs
-save("co2_retrieval.jld", "K",out.K, "G",out.G, "Sa",out.Sₐ, "Se",out.Sₑ, "y", out.y, "f",out.f)
 
