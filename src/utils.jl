@@ -1,6 +1,6 @@
 import NCDatasets
 
-function save_inversion_results(filename::String, results::Array{InversionResults}, data::Dataset, experiment_label::Array{String})
+function save_inversion_results(filename::String, results::Array{InversionResults}, data::Dataset, experiment_label::Array{String,1})
     
     file = NCDataset(filename, "c");
     num_experiments, num_datapoints = size(results);
@@ -42,9 +42,9 @@ function save_inversion_results(filename::String, results::Array{InversionResult
 
             # save to file
             println("saving measurement")
-            measurement[:,:] = list2array([timeseries[i].y for i=1:num_datapoints])
+            measurement[:,:] = list2array([timeseries[i].measurement for i=1:num_datapoints])
             println("saving model")
-        model[:,:] = list2array([timeseries[i].f for i=1:num_datapoints])
+        model[:,:] = list2array([timeseries[i].model for i=1:num_datapoints])
     end
     catch e
         println("save failed")
