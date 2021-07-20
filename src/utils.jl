@@ -1,4 +1,4 @@
-using NCDatasets
+import NCDatasets
 
 function save_inversion_results(filename::String, results::Array{InversionResults}, data::Dataset, experiment_label::Array{String})
     
@@ -98,6 +98,34 @@ function calc_vcd(p::Float64, T::Float64, δz::Float64)
 end #function calc_vcd
 
 
+function half_pressure_levels(p::Array{<:Real,1})
+    half_levels::Array{<:Real,1} = zeros(length(p)+1)
+    p₀ = p[1]
+    for i=2:length(p)
+        half_levels[i] = (p[i] + p[i-1])/2
+    end
+    half_levels[1] = p₀ - (half_levels[2]-p₀)
+    half_levels[end] = p[end] + (p[end]-half_levels[end-1])
+    return half_levels
+end
+
+
+"""construct vcd profiles by layer, given pressure,  temperature, and humidity"""
+function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=nothing)
+    vcd = zeros(length(p))
+    
+    if vmr_H₂O == nothing
+        vmr_H₂O = zeros(length(p))
+    end
+    
+    half_levels = half_pressure_levels(p)
+    δp = half_levels[2:end] - half_levels[1:end-1]
+    input_variables = zip(δp,T,vmr_H₂O)
+    vcd = map(x -> SpectralFits.vcd_pressure(x[1], x[2], x[3]), input_variables)
+    return vcd
+end
+
+
 function assemble_state_vector!(x::AbstractDict)
     out::Array{Real,1} = []
     for key in keys(x)
@@ -111,6 +139,14 @@ function assemble_state_vector!(x::Vector{<:Real}, key_vector::Array{Any,1}, inv
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end #function assemble_state_vector!
+
+
+
+function assemble_state_vector!(x::Array{<:Real,1}, fields::Array{Any,1}, num_levels::Integer, inversion_setup::AbstractDict)
+    out::OrderedDict{Any, Array{<:Real,1}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
+    out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
+    return out
+end
 
 
 """
@@ -137,3 +173,9 @@ function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
     end
     return P⁰
 end  
+
+
+function calc_gain_matrix(inversion_results::InversionResults)
+    G = inv(inversion_results.K'*inversion_results.Sₑ*inversion_results.K + inversion_results.Sₐ)*inversion_results.K'*inversion_results.Sₑ
+    return G
+end

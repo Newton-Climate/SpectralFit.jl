@@ -1,6 +1,7 @@
 using RadiativeTransfer, RadiativeTransfer.Absorption
-using HDF5, Statistics , Interpolations, Dates
+using Statistics , Interpolations, Dates
 using OrderedCollections
+import HDF5 
 
 
 
@@ -9,7 +10,7 @@ Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
 function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
 
-    hitran_table = Absorption.read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
+    hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
         return MolecularMetaData(filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
@@ -109,17 +110,37 @@ function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
 end
 
 
+### define some default values for p and T
+p_default = collect(range(450,800, length=20))
+T_default = collect(range(240, 290, length=20))
+
+"""calculate corss-sections for vertical profiles, where pressure and temperature are Arrays"""
+function construct_spectra_by_layer(molecules::Array{MolecularMetaData,1}; p::Array{<:Real,1}=p_default, T::Array{<:Real,1}=T_default, ν_min=6000, ν_max=6400, δν=0.01)
+    n_levels = length(p) 
+    spectra = Array{OrderedDict}(undef, n_levels)
+    for i=1:length(p)
+        spectra[i] = SpectralFits.construct_spectra(molecules, p=p[i], T=T[i], ν_min=ν_min, δν=δν, ν_max=ν_max)
+    end
+    return spectra
+end
+
+
+function construct_spectra_by_layer!(spectra::Array{OrderedDict,1}; p::Array{<:Real,1}=p_default, T::Array{<:Real,1}=T_default)
+    num_levels = length(p)
+    for i=1:num_levels
+        spectra[i] = SpectralFits.construct_spectra!(spectra[i], p=p[i], T=T[i])
+    end
+    return spectra
+end
     
 
 
 
 
+"""Constructor of the FrequencyCombDataset type """
 function read_DCS_data(filename::String)
-    """
-Constructor of the FrequencyCombDataset type 
-"""
 
-    file = h5open(filename, "r")
+    file = HDF5.h5open(filename, "r")
     ds_obj = read(file)
     if haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "totaltime_priorfit")
         datafields = ["pressure_evolution", "temperature_fitted_l", "totaltime_priorfit", "frequency_Hz", "WaveToFitROI_1600a"];
@@ -142,15 +163,15 @@ elseif haskey(ds_obj, "Temp_CS")
             datafields[2] = "temperature_evolution"
 end
 
-    pressure = 0.9938*read(file, datafields[1]) # pressure in mbar
-    temperature = read(file, datafields[2]) + 273.15*ones(length(pressure)) # temperature in K
+    pressure = 0.9938*HDF5.read(file, datafields[1]) # pressure in mbar
+    temperature = HDF5.read(file, datafields[2]) + 273.15*ones(length(pressure)) # temperature in K
     pathlength = 195017 # round trip path length in meters DCSA
     #pathlength = 196367 # round trip path length in m for DCSB
 
-    time = read(file, datafields[3])
-    grid = read(file, datafields[4])
+    time = HDF5.read(file, datafields[3])
+    grid = HDF5.read(file, datafields[4])
     grid = grid ./ c # convert from hz to wavenumber 
-    intensity = read(file, datafields[5])
+    intensity = HDF5.read(file, datafields[5])
     close(file)
 
     # save to a struct
@@ -224,6 +245,29 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
     grid = dataset.grid[indexes]
     intensity = dataset.intensity[i,indexes]
     vcd = calc_vcd(p, T, δz)
+
+    # save to struct FrequencyCombMeasurement
+    if typeof(dataset) == FrequencyCombDataset
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0)
+        elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window)
+    end # if statement
+    
+    return measurement
+end # function get_measurement
+
+
+function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real, p::Array{Float64,1}, T::Array{Float64,1})
+
+    i = measurement_num
+    δz = dataset.pathlength
+    time = dataset.time[i]
+
+    # find indexes
+    indexes = find_indexes(ν_min, ν_max, dataset.grid)
+    grid = dataset.grid[indexes]
+    intensity = dataset.intensity[i,indexes]
+    vcd = make_vcd_profile(p, T)
 
     # save to struct FrequencyCombMeasurement
     if typeof(dataset) == FrequencyCombDataset

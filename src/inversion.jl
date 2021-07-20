@@ -25,6 +25,25 @@ function make_obs_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
 end
 
 
+"""Make prior error covarience matrix"""
+function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
+    if typeof(σ) <: AbstractDict
+        σ = assemble_state_vector!(σ)
+    end
+    
+    n = length(σ)
+    Sₐ⁻¹::Array{Float64,2} = zeros(n,n)
+    x = 1 ./ σ.^2
+   # bad_idx = findall(x.==Inf)
+     #[x[i] = 1/1.0e10 for i in bad_idx]
+
+    for i=1:n
+        Sₐ⁻¹[i,i] = x[i]
+    end
+    return Sₐ⁻¹
+end
+
+
 function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
     f = generate_forward_model(measurement, spectra, inversion_setup);
     Sₑ = make_obs_error(measurement);
@@ -63,7 +82,7 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ)
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
 end#function
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
@@ -107,10 +126,62 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
 end#function
 
+
+"""fit over an atmospheric column with multiple layers"""
+function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
     
+
+    Sₒ⁻¹ = SpectralFits.make_obs_error(measurement, a=0.0019656973992654737);
+    
+    #Sₑ = diagm(ones(length(measurement.intensity)));
+    y = measurement.intensity;
+    Kᵢ = zeros(length(y), length(x₀));
+    xₐ = assemble_state_vector!(x₀);
+    xᵢ = xₐ
+    Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
+    tolerence = 1.0e-4;
+    γ = 1;
+    δᵢ = 15;
+    i = 1
+    fᵢ = f(xᵢ)
+    
+
+    # begin the non-linear fit
+    while i<15 && δᵢ>tolerence
+
+        # evaluate the model and jacobian 
+        result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
+        f_old = fᵢ # reassign model output 
+        fᵢ, Kᵢ = result.value, result.derivs[1]
+
+        # Gauss-Newton Algorithm
+        lhs = (Sₐ⁻¹ + Kᵢ'*Sₒ⁻¹*Kᵢ + γ*Sₐ⁻¹)
+        rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
+        Δx = lhs\rhs
+
+        x = xᵢ + Δx; # reassign state vector for next iteration
+        xᵢ = x
+
+        #evaluate relative difference between this and previous iteration 
+        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
+        if i==1 #prevent premature ending of while loop
+            δᵢ = 1
+        end        
+        println("δᵢ for iteration ",i," is ",δᵢ)        
+        i = i+1
+    end #while loop
+
+    # Calculate χ²
+    χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+
+    # Gain matrix
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
+end#function    
 
 function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::Dataset, ν_range::Tuple)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[2])

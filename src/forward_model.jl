@@ -50,6 +50,23 @@ transmission::Vector: the calculated tranmission
 end
 
 
+"""calculate transmission in a profile with multiple layers"""
+function calculate_transmission(xₐ::AbstractDict, spectra::Array{<:AbstractDict,1}, vcd::Array{<:Real,1})
+   
+    n_levels = length(vcd)
+    k = collect(keys(spectra[1]))
+    τ = zeros(size(spectra[1][k[1]].grid))
+    for i = 1:n_levels
+        for species in keys(spectra[1])
+            τ += vcd[i]*xₐ[species][i]*spectra[i][species].cross_sections
+        end
+    end
+    return exp.(-τ)
+end
+
+
+
+
 """
 down-scales the co-domain of spectral cross-sections grid to the instrument grid
 """
@@ -215,3 +232,35 @@ f::Function: the forward model called as f(x::Vector)
     end
     return f
 end
+
+
+"""Generate a foreward model that calculates the transmission through multiple layers of the atmosphere"""
+function generate_profile_model(xₐ::AbstractDict, measurement::Measurement, spectra::Array{OrderedDict,1}, inversion_setup::AbstractDict)
+    x_fields = collect(keys(xₐ))
+    num_levels = length(xₐ[x_fields[1]])
+    
+    
+    function f(x)
+
+        if typeof(x) <: Array
+            x = assemble_state_vector!(x, x_fields, num_levels, inversion_setup)
+        end
+        if inversion_setup["fit_pressure"]
+            println("fitting p and T")
+            p, T = x["pressure"], x["temperature"]
+                    spectra = construct_spectra_by_layer!(spectra, p=p, T=T)
+        end
+        
+        transmission = calculate_transmission(x, spectra, measurement.vcd)
+        transmission = apply_instrument(collect(spectra[1][x_fields[1]].grid), transmission, measurement.grid)
+
+        # calculate lgendre polynomial coefficients and fit baseline 
+        shape_parameters = x["shape_parameters"]
+        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], shape_parameters, length(transmission))'
+        intensity = transmission .* polynomial_term
+        return intensity
+    end
+    return f
+end
+
+

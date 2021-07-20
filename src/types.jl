@@ -35,11 +35,14 @@ end
 struct InversionResults
     timestamp
     x
-    y
-    f
+    measurement
+    model
     χ²
     S
     grid
+    K
+    Sₑ
+    Sₐ
 end
 
 
@@ -76,11 +79,11 @@ abstract type Measurement end
 mutable struct FrequencyCombMeasurement <: Measurement
     intensity::Array{Float64,1}
     grid::Vector{Float64}
-    temperature::Float64
-    pressure::Float64
+    temperature::Union{Float64, Array{Float64,1}}
+    pressure::Union{Float64, Array{Float64,1}}
     time::Any
     pathlength::Float64
-    vcd::Float64
+    vcd::Union{Float64, Array{Float64,1}}
     num_averaged_measurements::Int64
     averaging_window::Any
 end
