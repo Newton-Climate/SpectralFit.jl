@@ -126,7 +126,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
 end#function
 
 
@@ -180,7 +180,7 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
     S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
 
     # Gain matrix
-    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
+    return InversionResults(measurement.time, xᵢ, y, fᵢ, χ², S, measurement.grid, kᵢ, Sₒ⁻¹, Sₐ⁻¹)
 end#function    
 
 function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::Dataset, ν_range::Tuple)
