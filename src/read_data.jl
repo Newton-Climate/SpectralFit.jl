@@ -8,11 +8,11 @@ import HDF5
 """constructor for MolecularMetaData
 Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
-function get_molecule_info(filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
+function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
 
     hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
-        return MolecularMetaData(filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
+        return MolecularMetaData(molecule, filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
 
 

@@ -2,6 +2,7 @@ using Dates
 
     """stores the metadata of hitran line-lists and coefficients in type HitranTable"""
 struct MolecularMetaData
+    molecule::String
     filename::String
     molecule_num::Integer
     isotope_num::Integer
