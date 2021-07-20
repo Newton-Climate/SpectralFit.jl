@@ -1,5 +1,5 @@
 using RadiativeTransfer, OrderedCollections, Plots, JLD, LaTeXStrings
-using SpectralFits, Statistics
+using SpectralFits, Statistics, LinearAlgebra
 
 
 
@@ -29,9 +29,9 @@ measurement =  get_measurement(1, data, ν_min, ν_max, p, T)
 ν_range = 6000:6400
 
 # Get the HiTran parameters
-CH₄ = get_molecule_info("../CH4_S.data", 6, 1, ν_range)
-H₂O = get_molecule_info("../H2O_S.data", 1, 1, ν_range)
-CO₂ = get_molecule_info("../CO2_S.data", 2,1,ν_range)
+CH₄ = get_molecule_info("CH4", "../CH4_S.data", 6, 1, ν_range)
+H₂O = get_molecule_info("H2O", "../H2O_S.data", 1, 1, ν_range)
+CO₂ = get_molecule_info("CO2", "../CO2_S.data", 2,1,ν_range)
 
 # Calculate the cross-sections and store in dictionary
 molecules = [H₂O, CH₄, CO₂]
@@ -167,7 +167,7 @@ G1 = calc_gain_matrix(out)
 G2 = calc_gain_matrix(out2)
 A1 = G1*out.K
 A2 = G2*out2.K
-vcd = make_vcd_profile(p, T, x_retrieved[H₂O])
+vcd = make_vcd_profile(p, T, vmr_H₂O=x_retrieved[H₂O])
 
 num_layers = 20
 h2o_ind = 1:num_layers
