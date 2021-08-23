@@ -9,7 +9,7 @@ using OrderedCollections
 
 ### export our structs and types
 # spectral-related types 
-export MolecularMetaData, Molecule, Spectra, OrderedDict
+export MolecularMetaData, Molecule, Spectra, OrderedDict, InversionResults
 
 
 # Dataset-related types
@@ -40,5 +40,6 @@ export process_all_files
 # some useful funcs fom utils.jl
 export assemble_state_vector!, OCO_spectra
 export make_vcd_profile, calc_gain_matrix
+export save_results
 
 end # module

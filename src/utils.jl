@@ -1,4 +1,4 @@
-import NCDatasets
+using NCDatasets
 
 function save_inversion_results(filename::String, results::Array{InversionResults}, data::Dataset, experiment_label::Array{String,1})
     
@@ -178,4 +178,27 @@ end
 function calc_gain_matrix(inversion_results::InversionResults)
     G = inv(inversion_results.K'*inversion_results.Sₑ*inversion_results.K + inversion_results.Sₐ)*inversion_results.K'*inversion_results.Sₑ
     return G
+end
+
+function save_results(filename::String, results::Union{InversionResults, Array{InversionResults,1}}, experiment_name::Union{String, Array{String,1}})
+    file = NCDataset(filename, "c");
+    num_datapoints = length(results)
+    defDim(file, "start_time", num_datapoints)
+    machine_time = [results[i].machine_time for i=1:length(results)]
+    defVar(file, "start_time", machine_time, ("start_time",))
+
+        for key in keys(results[1].x)
+            if typeof(key) <: MolecularMetaData
+                println(key.molecule)
+                vmr = defVar(file, key.molecule, Float64, ("start_time",))
+                vmr[:] = [results[i].x[key] for i =1:num_datapoints]
+            elseif key == "pressure" || key == "temperature"
+                vmr = defVar(file, key, Float64, ("start_time",))
+                vmr[:] = [results[i].x[key] for i =1:num_datapoints]
+
+        end
+    end
+    
+
+    close(file)
 end

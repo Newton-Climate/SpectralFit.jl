@@ -1,6 +1,6 @@
 using RadiativeTransfer, RadiativeTransfer.Absorption
 using Statistics , Interpolations, Dates
-using OrderedCollections
+using OrderedCollections, HDF5
 import HDF5 
 
 
@@ -248,9 +248,9 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
 
     # save to struct FrequencyCombMeasurement
     if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0)
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i])
         elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window)
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i])
     end # if statement
     
     return measurement
@@ -271,9 +271,9 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
 
     # save to struct FrequencyCombMeasurement
     if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0)
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i])
         elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window)
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i])
     end # if statement
     
     return measurement

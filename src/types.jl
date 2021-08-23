@@ -33,8 +33,9 @@ end
 
     """-type for storing results from spectral fit
 - used later for saving into NetCDF files"""
-struct InversionResults
+mutable struct InversionResults
     timestamp
+    machine_time
     x
     measurement
     model
@@ -87,5 +88,6 @@ mutable struct FrequencyCombMeasurement <: Measurement
     vcd::Union{Float64, Array{Float64,1}}
     num_averaged_measurements::Int64
     averaging_window::Any
+    machine_time::Float64
 end
     
