@@ -1,4 +1,4 @@
-using NCDatasets
+using NCDatasets, RecursiveArrayTools
 
 function save_inversion_results(filename::String, results::Array{InversionResults}, data::Dataset, experiment_label::Array{String,1})
     
@@ -195,10 +195,64 @@ function save_results(filename::String, results::Union{InversionResults, Array{I
             elseif key == "pressure" || key == "temperature"
                 vmr = defVar(file, key, Float64, ("start_time",))
                 vmr[:] = [results[i].x[key] for i =1:num_datapoints]
-
         end
     end
     
-
     close(file)
 end
+
+
+function list2array(array_in::Array)
+    outer_dim, inner_dim = length(array_in), length(array_in[1])
+    data_type = typeof(array_in[1][1])
+
+    # allocate memory
+    array_out = Array{data_type}(undef, (outer_dim, inner_dim))
+    v = VectorOfArray(array_in)
+    array_out = convert(Array, v)
+    return array_out'
+end
+
+function list2array!(array_out::Array, array_in::Array)
+    v = VectorOfArray(array_in)
+    array_out = convert(Array, v)
+    return array_out'
+end
+
+
+function save_results(filename::String, results::Array{InversionResults,2}, experiment_label::Union{String, Array{String,1}})
+    file = NCDataset(filename, "c");
+    num_datapoints, num_experiments = size(results)
+    defDim(file, "start_time", num_datapoints)
+    machine_time = [results[i,1].machine_time for i=1:num_datapoints]
+    defVar(file, "start_time", machine_time, ("start_time",))
+
+    for i=1:num_experiments
+       timeseries = results[i,:]
+           
+       group = defGroup(file, experiment_label[i])
+        defDim(group, "spectral_grid", length(timeseries[1].grid))
+        defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
+        model = defVar(group, "model", Float64, ("start_time", "spectral_grid"))
+        measurement = defVar(group, "measurement", Float64, ("start_time", "spectral_grid"))
+
+            # save to file
+            measurement[:,:] = list2array([timeseries[i].measurement for i=1:num_datapoints])
+        model[:,:] = list2array([timeseries[i].model for i=1:num_datapoints])
+
+        # save data from retrieved state vector
+        for key in keys(timeseries[1].x)
+            if typeof(key) <: MolecularMetaData
+                vmr = defVar(group, key.molecule, Float64, ("start_time",))
+                vmr[:] = [timeseries[i].x[key] for i =1:num_datapoints]
+            elseif key == "pressure" || key == "temperature"
+                vmr = defVar(group, key, Float64, ("start_time",))
+                vmr[:] = [timeseries[i].x[key] for i =1:num_datapoints]
+        end
+    end
+    end
+        
+    close(file)
+    return true
+end
+
