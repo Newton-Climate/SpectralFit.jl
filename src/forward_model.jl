@@ -209,9 +209,19 @@ f::Function: the forward model called as f(x::Vector)
         # convert the state vector to a dict with labelled fields
         x = assemble_state_vector!(x, x₀_fields, inversion_setup)
 
-        # update the cross-sections given pressure and temperature 
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+        # update the cross-sections given pressure and temperature
+        if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
 
+            ### comment these out for now.
+            # function doesn't work when doing forwarddiff where one of p/T are Dual Numbers 
+#        elseif inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]==false
+#            spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
+
+#        elseif inversion_setup["fit_pressure"]==false && inversion_setup["fit_temperature"]
+#            spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
+        end
+        
         #for the OCO line-list for CO₂
         if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
         println("fitting temperature with OCO database")
@@ -225,8 +235,7 @@ f::Function: the forward model called as f(x::Vector)
         transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline 
-        shape_parameters = x["shape_parameters"]
-        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], shape_parameters, length(transmission))'
+        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], length(transmission))'
         intensity = transmission .* polynomial_term
         return intensity
     end
