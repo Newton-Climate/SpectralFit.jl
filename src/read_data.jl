@@ -26,7 +26,7 @@ function calculate_cross_sections( filename::String, molec_num::Integer, iso_num
     hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
     grid = ν_min:δν:ν_max;
-    cross_sections = absorption_cross_section(model, grid, p, T)
+    cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T)
     
     # store results in the Molecule type
     molecule = Molecule(cross_sections, grid, p, T, hitran_table)
@@ -58,7 +58,7 @@ function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001
     grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
 
     # recalculate cross-sections
-    cross_sections = absorption_cross_section(model, grid, p, T);
+    cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T);
     
     # store rsults in a struct
     molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table)
