@@ -20,11 +20,11 @@ function get_molecule_info(molecule::String, filename::String, molecule_num::Int
 - Constructor for Molecule type
 - calculates the cross-sections of a HiTran molecule and stores in Molecule type
 """
-function calculate_cross_sections( filename::String, molec_num::Integer, iso_num::Integer; ν_min::Real=6000, ν_max::Real=6400, δν=0.01, p::Real=1001, T::Real=290)
+function calculate_cross_sections( filename::String, molec_num::Integer, iso_num::Integer; ν_min::Real=6000, ν_max::Real=6400, δν=0.01, p::Real=1001, T::Real=290, architecture=CPU())
 
     # retrieve the HiTran parameters 
     hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
-    model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
+    model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
     grid = ν_min:δν:ν_max;
     cross_sections = absorption_cross_section(model, grid, p, T)
     
@@ -37,7 +37,7 @@ end #function calculate_cross_sections
 - Calculates the cross-sections of all input molecules inputted as type MolecularMetaData
 - returns Molecules as a Dict
 """
-function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_min::Real=6000, δν::Real=0.01, ν_max::Real=6300, p::Real=1001, T::Real=295, use_TCCON::Bool=false)
+function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_min::Real=6000, δν::Real=0.01, ν_max::Real=6300, p::Real=1001, T::Real=295, use_TCCON::Bool=false, architecture=CPU())
     
     ν_grid = ν_min:δν:ν_max;
     cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
@@ -52,9 +52,9 @@ end #function calculate_cross_sections
 - recalculates the cross-sections given the Molecule type
 - used in the forward model for institue cross-sections calculation 
 """
-function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001)
+function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001, architecture=CPU())
     
-        model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=CPU());
+        model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=architecture);
     grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
 
     # recalculate cross-sections
@@ -102,9 +102,9 @@ recalcualtes the cross-sections of Molecules type stored in the Spectra type
     return spectra
 end
 
-function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
+function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290, architecture=CPU())
     for species in keys(spectra)
-        spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T);
+        spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T, architecture=architecture);
     end
     return spectra
 end

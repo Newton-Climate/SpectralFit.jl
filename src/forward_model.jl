@@ -211,15 +211,15 @@ f::Function: the forward model called as f(x::Vector)
 
         # update the cross-sections given pressure and temperature
         if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
-            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"], architecture=inversion_setup["architecture"])
 
             ### comment these out for now.
             # function doesn't work when doing forwarddiff where one of p/T are Dual Numbers 
 #        elseif inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]==false
-#            spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
+#            spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature, architecture=inversion_setup["architecture"])
 
 #        elseif inversion_setup["fit_pressure"]==false && inversion_setup["fit_temperature"]
-#            spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
+#            spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"], architecture=inversion_setup["architecture"])
         end
         
         #for the OCO line-list for CO₂
