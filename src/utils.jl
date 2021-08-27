@@ -1,9 +1,6 @@
 using NCDatasets, RecursiveArrayTools
 
-"""
-Finds the indexes given values ν_min:ν_max
-"""
-
+"""Finds the indexes given values ν_min:ν_max"""
 function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
     
     a = findlast(x -> x <= ν_min, ν_grid)
@@ -12,7 +9,7 @@ function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
     return indexes
 end #function find_indexes
 
-
+"""Calculate the vertical column density given pressure and temperature"""
 function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
     δp = δp*100 # convert from mbar to pascals 
     dry_mass = 28.9647e-3  /Nₐ  # in kg/molec, weighted average for N2 and O2
@@ -25,16 +22,14 @@ function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
     return vcd_dry #+ vcd_H₂O
 end
 
-function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)
-    """
-Calculates the vertical column density
-"""
-    
+"""Calculate the vertical column density given humidity, pressure, temperature, and layer thickness"""
+function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)    
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
     return vcd
 end # function calc_vcd
 
+"""Calculate the vertical column density given pressure, temperature, and layer thickness"""
 function calc_vcd(p::Float64, T::Float64, δz::Float64)
     VMR_H₂O = 0
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
@@ -42,7 +37,7 @@ function calc_vcd(p::Float64, T::Float64, δz::Float64)
     return vcd
 end #function calc_vcd
 
-
+"""Calculate the half-pressure levels given a pressure profile"""
 function half_pressure_levels(p::Array{<:Real,1})
     half_levels::Array{<:Real,1} = zeros(length(p)+1)
     p₀ = p[1]
@@ -70,7 +65,7 @@ function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=noth
     return vcd
 end
 
-
+"""Convert a state vector{Dict} to an Array"""
 function assemble_state_vector!(x::AbstractDict)
     out::Array{Real,1} = []
     for key in keys(x)
@@ -79,6 +74,7 @@ function assemble_state_vector!(x::AbstractDict)
     return out
 end #function assemble_state_vector!
 
+"""Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Vector{<:Real}, key_vector::Array{Any,1}, inversion_setup::AbstractDict)
     out::OrderedDict{Any,Any} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
@@ -86,7 +82,7 @@ function assemble_state_vector!(x::Vector{<:Real}, key_vector::Array{Any,1}, inv
 end #function assemble_state_vector!
 
 
-
+"""Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Array{<:Real,1}, fields::Array{Any,1}, num_levels::Integer, inversion_setup::AbstractDict)
     out::OrderedDict{Any, Array{<:Real,1}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
@@ -94,9 +90,7 @@ function assemble_state_vector!(x::Array{<:Real,1}, fields::Array{Any,1}, num_le
 end
 
 
-"""
-calculates the legendre polynomial over domain x::Vector of degree max::Integer
-"""
+"""calculates the legendre polynomial over domain x::Vector of degree max::Integer"""
 function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
     
     FT = eltype(x)
@@ -119,34 +113,14 @@ function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
     return P⁰
 end  
 
-
+"""Calculate the gain matrix from InversionResults fields"""
 function calc_gain_matrix(inversion_results::InversionResults)
     G = inv(inversion_results.K'*inversion_results.Sₑ*inversion_results.K + inversion_results.Sₐ)*inversion_results.K'*inversion_results.Sₑ
     return G
 end
 
-function save_results(filename::String, results::Union{InversionResults, Array{InversionResults,1}}, experiment_name::Union{String, Array{String,1}})
-    file = NCDataset(filename, "c");
-    num_datapoints = length(results)
-    defDim(file, "start_time", num_datapoints)
-    machine_time = [results[i].machine_time for i=1:length(results)]
-    defVar(file, "start_time", machine_time, ("start_time",))
 
-        for key in keys(results[1].x)
-            if typeof(key) <: MolecularMetaData
-                println(key.molecule)
-                vmr = defVar(file, key.molecule, Float64, ("start_time",))
-                vmr[:] = [results[i].x[key] for i =1:num_datapoints]
-            elseif key == "pressure" || key == "temperature"
-                vmr = defVar(file, key, Float64, ("start_time",))
-                vmr[:] = [results[i].x[key] for i =1:num_datapoints]
-        end
-    end
-    
-    close(file)
-end
-
-
+"""convert an array of arrays to an array"""
 function list2array(array_in::Array)
     outer_dim, inner_dim = length(array_in), length(array_in[1])
     data_type = typeof(array_in[1][1])
@@ -158,13 +132,14 @@ function list2array(array_in::Array)
     return array_out'
 end
 
+"""convert an array of arrays to an array"""
 function list2array!(array_out::Array, array_in::Array)
     v = VectorOfArray(array_in)
     array_out = convert(Array, v)
     return array_out'
 end
 
-
+"""save the output of an inversion  to NetCDF"""
 function save_results(filename::String, results::Array{InversionResults,2}, experiment_label::Union{String, Array{String,1}})
     file = NCDataset(filename, "c");
     num_datapoints, num_experiments = size(results)
