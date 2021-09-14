@@ -102,7 +102,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     while i<10 && δᵢ>tolerence
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        @time ForwardDiff.jacobian!(result, f, xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
