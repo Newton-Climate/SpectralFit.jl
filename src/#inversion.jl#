@@ -100,18 +100,23 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
 
     # begin the non-linear fit
     while i<10 && δᵢ>tolerence
+        @show i
+
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        @time ForwardDiff.jacobian!(result, f, xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm 
         x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
+
+
         xᵢ = x; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
+        
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
         end        
@@ -251,14 +256,18 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     end
 
     windows = collect(keys(spectral_windows))
-#    measurements = map(x->get_measurement(1, dataset, x[1], x[2]), windows)
-#                       spectras = map(x->construct_spectra(molecules, ν_min=x[1]-0.1, δν=0.001, ν_max=x[2]+0.1, p=p, T=T, architecture=inversion_setup["architecture"]), windows)
-#    forward_models = [generate_forward_model(xₐ, measurements[i], spectras[i], inversion_setup) for i=1:length(spectras)]
+    measurements = map(x->get_measurement(1, dataset, x[1], x[2]), windows)
+                       spectras = map(x->construct_spectra(molecules, ν_min=x[1]-0.1, δν=0.001, ν_max=x[2]+0.1, p=p, T=T, architecture=inversion_setup["architecture"]), windows)
+    forward_models = [generate_forward_model(xₐ, measurements[i], spectras[i], inversion_setup) for i=1:length(spectras)]
     println("Beginning inversion")
     
-    for i=1:num_measurements
-        for (j, spectral_window) in enumerate(keys(spectral_windows))
-            results[i,j] = fit_spectra(i, xₐ, dataset, molecules, spectral_window, inversion_setup)
+    for (i, spectral_window) in enumerate(keys(spectral_windows))
+        spectra = construct_spectra(molecules, ν_min=spectral_window[1]-0.1, δν=0.001, ν_max=spectral_window[2]+0.1, p=p, T=T, architecture=inversion_setup["architecture"])
+        
+        for j=1:num_measurements
+            measurement = get_measurement(j, dataset, spectral_window[1], spectral_window[2])
+           f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
+            results[i,j] = nonlinear_inversion(f, xₐ, measurement, spectras[i], inversion_setup)
         end
     end
     return results

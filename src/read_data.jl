@@ -8,10 +8,10 @@ import HDF5
 """constructor for MolecularMetaData
 Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
-function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange)
+function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange, architecture=CPU())
 
     hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
-    model = make_hitran_model(hitran_table, Voigt(), architecture=CPU());
+    model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
         return MolecularMetaData(molecule, filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
     end
 
@@ -58,7 +58,7 @@ function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001
     grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
 
     # recalculate cross-sections
-    cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T);
+    cross_sections = absorption_cross_section(model, grid, p, T);
     
     # store rsults in a struct
     molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table)
@@ -187,10 +187,10 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
 """
     
     timestamps = unix2datetime.(dataset.time)
-    t₁ = floor(timestamps[1], Dates.Hour)
+    t₁ = floor(timestamps[1], δt)
     t₂ = t₁ + δt
     t_final = timestamps[end]
-    num_measurements = ceil((t_final - t₁), Dates.Hour)
+    num_measurements = ceil((t_final - t₁), δt)
     num_measurements = Int(num_measurements/δt)
     averaged_measurements = Array{Float64}(undef,(num_measurements, size(dataset.intensity)[2]))
     averaged_temperature = Array{Float64}(undef, num_measurements)

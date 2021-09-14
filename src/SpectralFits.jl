@@ -1,4 +1,5 @@
 module SpectralFits
+using RadiativeTransfer, RadiativeTransfer.Absorption
 include("constants.jl")
 include("types.jl")
 include("utils.jl")
