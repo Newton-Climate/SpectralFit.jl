@@ -115,7 +115,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
         end        
-        println("δᵢ for iteration ",i," is ",δᵢ)        
+        #println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
@@ -192,7 +192,23 @@ end
 
 
 function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, ν_range::Tuple, inversion_setup::Dict{String,Any})
+    
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
+
+    # Use a-priori pressure and temperature if given
+    # Otherwise, use the measurement information 
+        if haskey(xₐ, "pressure")
+        p = xₐ["pressure"]
+    else
+        p = measurement.pressure
+    end
+
+    if haskey(xₐ, "temperature")
+        T = xₐ["temperature"]
+    else
+        T = measurement.temperature
+    end
+
     spectra = construct_spectra(molecules, ν_min=ν_range[1]-3, ν_max=ν_range[end]+3, p=measurement.pressure, T=measurement.temperature)
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = #try
@@ -218,10 +234,7 @@ function run_inversion(xₐ::Array{<:Real,1}, dataset::Dataset, inversion_setup:
     println("Beginning inversion")
     
         Threads.@threads for i=1:num_measurements
-        
-        if i%100 == 0
-            println(i)
-        end
+  
         println(i)
         results[1,i] = fit_spectra(i, xₐ, dataset, ν_CO₂);        
         results[2,i] = fit_spectra(i, xₐ, dataset, ν_CH₄);
@@ -236,29 +249,11 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     modelled = Array{InversionResults}(undef, num_measurements)
     num_windows = length(keys(spectral_windows));
     results = Array{InversionResults}(undef, (num_windows, num_measurements));
-    
-
-    if haskey(xₐ, "pressure")
-        p = xₐ["pressure"]
-    else
-        p = mean(dataset.pressure)
-    end
-
-    if haskey(xₐ, "temperature")
-        T = xₐ["temperature"]
-    else
-        T = mean(dataset.temperature)
-    end
-
-    windows = collect(keys(spectral_windows))
-#    measurements = map(x->get_measurement(1, dataset, x[1], x[2]), windows)
-#                       spectras = map(x->construct_spectra(molecules, ν_min=x[1]-0.1, δν=0.001, ν_max=x[2]+0.1, p=p, T=T, architecture=inversion_setup["architecture"]), windows)
-#    forward_models = [generate_forward_model(xₐ, measurements[i], spectras[i], inversion_setup) for i=1:length(spectras)]
     println("Beginning inversion")
     
-    for i=1:num_measurements
+    Threads.@threads for i=1:num_measurements
         for (j, spectral_window) in enumerate(keys(spectral_windows))
-            results[i,j] = fit_spectra(i, xₐ, dataset, molecules, spectral_window, inversion_setup)
+            results[j,i] = fit_spectra(i, xₐ, dataset, molecules, spectral_window, inversion_setup)
         end
     end
     return results
@@ -270,27 +265,36 @@ end
 
 
         
-function process_all_files(xₐ::Array{<:Real}, inversion_setup::Dict; path=pwd())
-    files = readdir(path);
+function process_all_files(xₐ::AbstractDict,
+                           dataset::Dataset,
+                           molecules::Array{MolecularMetaData,1},
+                           inversion_setup::Dict,
+                           spectral_windows::AbstractDict,
+                           experiment_labels::Union{String, Array{String,1}};
+                           data_path=pwd(),
+                           out_path=pwd())
+
+    if typeof(experiment_labels) <: Array{String,1}
+        @assert length(spectral_windows) == length(experiment_labels)
+    end
+    
+    files = readdir(data_path);
     num_files = length(files)
     
     @showprogress 1 "Computing..." for i=1:num_files
-
-        file = path*files[i];
+        
+        file = files[i]
+        full_file = data_path*file
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
         println(file)
-        data = read_DCS_data(file)
         
+        data = read_DCS_data(full_file)
+        data = take_time_average(data, δt=inversion_setup["averaging_window"])
+        results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        if inversion_setup["take_time_average"]
-            data = take_time_average(data)
-        end
-
-        results = run_inversion(xₐ, data, inversion_setup)
-
-        outfile = file[1:end-3]*"_results.h5";
-        save_inversion_results(outfile, results, data, ["CO2_band", "CH4_band", "H2O_band"]);
+        outfile = out_path*"/"*file[1:end-3]*"_results.nc";
+        save_results(outfile, results, experiment_labels)
     end
     println("done with all files")
     return true

@@ -60,6 +60,7 @@ mutable struct FrequencyCombDataset <: Dataset
     pressure::Vector{Float64}
     time::Vector{Any}
     pathlength::Float64
+    timestamp::Array{Float64,1}
 end 
 
 struct TimeAveragedFrequencyCombDataset <: FrequencyComb

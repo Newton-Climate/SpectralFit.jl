@@ -175,7 +175,7 @@ end
     close(file)
 
     # save to a struct
-    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength)
+    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time)
     return dataset
 end # function read_DCS_data
 
