@@ -122,7 +122,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
+    return InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
 end#function
 
 

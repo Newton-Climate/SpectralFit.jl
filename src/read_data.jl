@@ -102,10 +102,15 @@ recalcualtes the cross-sections of Molecules type stored in the Spectra type
     return spectra
 end
 
-function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290, architecture=CPU())
+function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290, architecture=CPU(), use_OCO=false)
     for species in keys(spectra)
         spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T, architecture=architecture);
     end
+
+    if use_OCO
+        spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
+    end
+    
     return spectra
 end
 

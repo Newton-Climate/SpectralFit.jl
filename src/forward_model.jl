@@ -211,7 +211,7 @@ f::Function: the forward model called as f(x::Vector)
 
         # update the cross-sections given pressure and temperature
         if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
-            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"], architecture=inversion_setup["architecture"])
+            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"], architecture=inversion_setup["architecture"], use_OCO=inversion_setup["use_OCO"])
 
             ### comment these out for now.
             # function doesn't work when doing forwarddiff where one of p/T are Dual Numbers 
@@ -223,10 +223,10 @@ f::Function: the forward model called as f(x::Vector)
         end
         
         #for the OCO line-list for CO₂
-        if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting temperature with OCO database")
-            spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
-        end
+#        if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
+#        println("fitting temperature with OCO database")
+#            spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
+#        end
         
         # apply Beer's Law
         transmission = calculate_transmission(x, measurement, spectra)
