@@ -224,7 +224,7 @@ f::Function: the forward model called as f(x::Vector)
         
         #for the OCO line-list for CO₂
         if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
-        println("fitting temperature with OCO database")
+        #println("fitting temperature with OCO database")
             spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
         end
         

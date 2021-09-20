@@ -141,8 +141,11 @@ end
 
 """save the output of an inversion  to NetCDF"""
 function save_results(filename::String, results::Array{InversionResults,2}, experiment_label::Union{String, Array{String,1}})
+
+    println("Saving file...")
+    println(filename)
     file = NCDataset(filename, "c");
-    num_datapoints, num_experiments = size(results)
+    num_experiments, num_datapoints = size(results)
     defDim(file, "start_time", num_datapoints)
     machine_time = [results[i,1].machine_time for i=1:num_datapoints]
     defVar(file, "start_time", machine_time, ("start_time",))
