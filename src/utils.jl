@@ -147,7 +147,7 @@ function save_results(filename::String, results::Array{InversionResults,2}, expe
     file = NCDataset(filename, "c");
     num_experiments, num_datapoints = size(results)
     defDim(file, "start_time", num_datapoints)
-    machine_time = [results[i,1].machine_time for i=1:num_datapoints]
+    machine_time = [results[1,i].machine_time for i=1:num_datapoints]
     defVar(file, "start_time", machine_time, ("start_time",))
 
     for i=1:num_experiments
