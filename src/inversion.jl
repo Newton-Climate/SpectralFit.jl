@@ -115,7 +115,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
         end        
-        #println("δᵢ for iteration ",i," is ",δᵢ)        
+        println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
@@ -209,7 +209,7 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Data
         T = measurement.temperature
     end
 
-    spectra = construct_spectra(molecules, ν_min=ν_range[1]-3, ν_max=ν_range[end]+3, p=measurement.pressure, T=measurement.temperature)
+    spectra = construct_spectra(molecules, ν_grid=ν_range[1]-0.1:0.003:ν_range[end]+0.1, p=p, T=T)
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = #try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
@@ -252,6 +252,7 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     println("Beginning inversion")
     
     Threads.@threads for i=1:num_measurements
+        println(i)
         for (j, spectral_window) in enumerate(keys(spectral_windows))
             results[j,i] = fit_spectra(i, xₐ, dataset, molecules, spectral_window, inversion_setup)
         end

@@ -1,18 +1,27 @@
 using RadiativeTransfer, RadiativeTransfer.Absorption
 using Statistics , Interpolations, Dates
-using OrderedCollections, HDF5
-import HDF5 
+using OrderedCollections, HDF5, JLD2
 
+function load_interp_model(filepath::String)
+    @load filepath itp_model
+    return itp_model
+end
 
 
 """constructor for MolecularMetaData
 Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
-function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange, architecture=CPU())
+function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange{<:Real}, architecture=CPU())
 
     hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
         return MolecularMetaData(molecule, filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
+end
+
+function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
+    model = load_interp_model(filepath)
+    #hitran_table = read_hitran(filepath, mol=model.mol, iso=model.iso, ν_min=model.ν_grid[1], ν_max=model.ν_grid[end])
+        return MolecularMetaData(molecule, filepath, model.mol, model.iso, model.ν_grid, hitran_table, model)
     end
 
 
@@ -29,7 +38,7 @@ function calculate_cross_sections( filename::String, molec_num::Integer, iso_num
     cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T)
     
     # store results in the Molecule type
-    molecule = Molecule(cross_sections, grid, p, T, hitran_table)
+    molecule = Molecule(cross_sections, grid, p, T, hitran_table, model)
     return molecule
 end #function calculate_cross_sections
 
@@ -37,11 +46,10 @@ end #function calculate_cross_sections
 - Calculates the cross-sections of all input molecules inputted as type MolecularMetaData
 - returns Molecules as a Dict
 """
-function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_min::Real=6000, δν::Real=0.01, ν_max::Real=6300, p::Real=1001, T::Real=295, use_TCCON::Bool=false, architecture=CPU())
+function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295, use_TCCON::Bool=false, architecture=CPU())
     
-    ν_grid = ν_min:δν:ν_max;
     cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
-    out = OrderedDict(molecules[i] => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table) for i=1:length(molecules))
+    out = OrderedDict(molecules[i].molecule => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table, molecules[i].model) for i=1:length(molecules))
     return out
 end #function calculate_cross_sections
 
@@ -54,14 +62,14 @@ end #function calculate_cross_sections
 """
 function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001, architecture=CPU())
     
-        model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=architecture);
+        #model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=architecture);
     grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
 
     # recalculate cross-sections
-    cross_sections = absorption_cross_section(model, grid, p, T);
+    cross_sections = absorption_cross_section(molecule.model, grid, p, T);
     
     # store rsults in a struct
-    molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table)
+    molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table, molecule.model)
     return molecule
 end #function calculate_cross_sections!
 
@@ -105,12 +113,7 @@ end
 function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290, architecture=CPU(), use_OCO=false)
     for species in keys(spectra)
         spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T, architecture=architecture);
-    end
-
-    if use_OCO
-        spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
-    end
-    
+    end    
     return spectra
 end
 
@@ -321,4 +324,6 @@ Constructs an interpolation of the OCO cross-sections grid provided by JPL
     itp = interpolate(σ, BSpline(Cubic(Line(OnGrid()))))
     sitp = scale(itp, ν, T, p);
     return sitp
-end
+    end
+
+

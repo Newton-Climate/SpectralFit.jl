@@ -1,7 +1,7 @@
 
 using Interpolations, Statistics
 
-
+global OCO_interp = OCO_spectra("OCO_spectra.hdf")
 
 function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
     """
@@ -223,10 +223,10 @@ f::Function: the forward model called as f(x::Vector)
         end
         
         #for the OCO line-list for CO₂
-#        if inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-#        println("fitting temperature with OCO database")
-#            spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
-#        end
+        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
+        println("fitting temperature with OCO database")
+            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
+        end
         
         # apply Beer's Law
         transmission = calculate_transmission(x, measurement, spectra)

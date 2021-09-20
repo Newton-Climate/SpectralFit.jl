@@ -20,6 +20,7 @@ mutable struct Molecule
     p
     T
     hitran_table
+    model
 end
 
     """Type to store molecules"""
