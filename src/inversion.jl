@@ -272,8 +272,8 @@ function process_all_files(xₐ::AbstractDict,
                            inversion_setup::Dict,
                            spectral_windows::AbstractDict,
                            experiment_labels::Union{String, Array{String,1}};
-                           data_path=pwd(),
-                           out_path=pwd())
+                           data_path::String=pwd(),
+                           out_path::String=pwd())
 
     if typeof(experiment_labels) <: Array{String,1}
         @assert length(spectral_windows) == length(experiment_labels)
@@ -301,3 +301,34 @@ function process_all_files(xₐ::AbstractDict,
     return true
 end
 
+
+function process_all_files(xₐ::AbstractDict,
+                           dataset::Dataset,
+                           molecules::Array{MolecularMetaData,1},
+                           inversion_setup::Dict,
+                           spectral_windows::AbstractDict,
+                           experiment_labels::Union{String, Array{String,1}},
+                           datafiles::Array{String,1};
+                           out_path::String=pwd())
+
+    if typeof(experiment_labels) <: Array{String,1}
+        @assert length(spectral_windows) == length(experiment_labels)
+    end
+
+    
+    @showprogress 1 "Computing..." for i=1:length(datafiles)
+        file = datafiles[i]
+        if endswith(file, ".h5") == false; continue; end;
+        println(i,"/",num_files);
+        println(file)
+        
+        data = read_DCS_data(file)
+        data = take_time_average(data, δt=inversion_setup["averaging_window"])
+        results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
+
+        outfile = out_path*"/"*file[1:end-3]*"_results.nc";
+        save_results(outfile, results, experiment_labels)
+    end
+    println("done with all files")
+    return true
+end
