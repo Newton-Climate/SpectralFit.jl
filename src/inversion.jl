@@ -326,8 +326,9 @@ function process_all_files(xₐ::AbstractDict,
         @assert length(spectral_windows) == length(experiment_labels)
     end
 
-    
-    @showprogress 1 "Computing..." for i=1:length(datafiles)
+    num_files = length(datafiles)
+
+    @showprogress 1 "Computing..." for i=1:num_files
         file = datafiles[i]
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
