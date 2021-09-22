@@ -85,6 +85,17 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
 end#function
 
+function failed_inversion(xₐ::Union{OrderedDict, Array{Float64}}, measurement::Measurement)
+
+    if typeof(xₐ) <: AbstractDict
+        xₐ = assemble_state_vector!(xₐ)
+    end
+    
+    
+    return InversionResults(measurement.time, measurement.machine_time, NaN*xₐ, measurement.intensity, nan*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
+end
+
+
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     
     Sₑ = make_obs_error(measurement, a=0.0019656973992654737);
@@ -102,12 +113,12 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     while i<10 && δᵢ>tolerence
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        ForwardDiff.jacobian!(result, f, xᵢ);
+        @time ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm 
-        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
+        @time x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
         xᵢ = x; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
@@ -185,7 +196,7 @@ function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::D
     results = try
         nonlinear_inversion(xₐ, measurement, spectra, inversion_setup)
     catch
-        InversionResults(measurement.time, measurement.machine_time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid)
+        failed_inversion(xₐ, measurement)
     end    
     return results
 end
@@ -211,11 +222,11 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Data
 
     spectra = construct_spectra(molecules, ν_grid=ν_range[1]-0.1:0.003:ν_range[end]+0.1, p=p, T=T)
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
-    results = #try
+    results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
-#    catch
-#        InversionResults(measurement.time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid)
-#    end    
+    catch
+        failed_inversion(xₐ, measurement)
+    end    
     return results
 end
 
