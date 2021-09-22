@@ -92,7 +92,7 @@ function failed_inversion(xₐ::Union{OrderedDict, Array{Float64}}, measurement:
     end
     
     
-    return InversionResults(measurement.time, measurement.machine_time, NaN*xₐ, measurement.intensity, nan*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
+    return InversionResults(measurement.time, measurement.machine_time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
 end
 
 
