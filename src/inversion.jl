@@ -113,12 +113,12 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     while i<10 && δᵢ>tolerence
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        @time ForwardDiff.jacobian!(result, f, xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm 
-        @time x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
+        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
         xᵢ = x; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
@@ -126,7 +126,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
         end        
-        println("δᵢ for iteration ",i," is ",δᵢ)        
+        #println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
@@ -320,6 +320,7 @@ function process_all_files(xₐ::AbstractDict,
                            spectral_windows::AbstractDict,
                            experiment_labels::Union{String, Array{String,1}},
                            datafiles::Array{String,1};
+                           data_path::String=pwd(),
                            out_path::String=pwd())
 
     if typeof(experiment_labels) <: Array{String,1}
@@ -329,7 +330,7 @@ function process_all_files(xₐ::AbstractDict,
     num_files = length(datafiles)
 
     @showprogress 1 "Computing..." for i=1:num_files
-        file = datafiles[i]
+        file = data_path * datafiles[i]
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
         println(file)
@@ -338,7 +339,7 @@ function process_all_files(xₐ::AbstractDict,
         data = take_time_average(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        outfile = out_path*"/"*file[1:end-3]*"_results.nc";
+        outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.nc";
         save_results(outfile, results, experiment_labels)
     end
     println("done with all files")
