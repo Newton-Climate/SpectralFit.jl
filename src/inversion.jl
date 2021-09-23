@@ -6,21 +6,17 @@ using ProgressMeter, JLD2
 
 function make_obs_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
     n = length(measurement.intensity)
-    Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(measurement.intensity)
-    for i = 1:n
-        Sₑ[i,i] = 1/(a*sqrt(base))^2
-    end
+    value = 1/(a*sqrt(base))^2 * ones(n)
+    Sₑ = Diagonal(value)
     return Sₑ
 end
 
 function make_obs_error(dataset::Dataset; a::Float64=0.3*0.01611750368314077)
     n = length(measurement.intensity)
-    Sₑ::Array{Float64,2} = zeros((n,n))
     base = mean(dataset.intensity)
-    for i = 1:n
-        Sₑ[i,i] = 1/(a*sqrt(base))^2
-    end
+        value = 1/(a*sqrt(base))^2 * ones(n)
+    Sₑ = Diagonal(value)
     return Sₑ
 end
 
