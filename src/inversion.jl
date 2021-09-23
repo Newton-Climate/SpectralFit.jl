@@ -70,8 +70,10 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
         end
+        if inversion_setup["verbose_mode"]
+            println("δᵢ for iteration ",i," is ",δᵢ)
+        end
         
-        println("δᵢ for iteration ",i," is ",δᵢ)        
         i = i+1
     end #while loop
 
@@ -121,8 +123,12 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
-        end        
-        #println("δᵢ for iteration ",i," is ",δᵢ)        
+        end
+
+        if inversion_setup["verbose_mode"]
+            println("δᵢ for iteration ",i," is ",δᵢ)
+        end
+        
         i = i+1
     end #while loop
 
@@ -173,8 +179,12 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
         if i==1 #prevent premature ending of while loop
             δᵢ = 1
-        end        
-        println("δᵢ for iteration ",i," is ",δᵢ)        
+        end
+
+        if inversion_setup["verbose_mode"]
+            println("δᵢ for iteration ",i," is ",δᵢ)
+        end
+        
         i = i+1
     end #while loop
 
