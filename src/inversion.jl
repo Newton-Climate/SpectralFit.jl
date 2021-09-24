@@ -226,11 +226,12 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Data
         T = measurement.temperature
     end
 
-    spectra = construct_spectra(molecules, ν_grid=ν_range[1]-0.1:0.003:ν_range[end]+0.1, p=p, T=T)
+    spectra = construct_spectra(molecules, ν_grid=ν_range[1]-0.1:0.003:ν_range[end]+0.1, p=p, T=T, architecture=inversion_setup["architecture"])
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
     catch
+        println("Inversion for measurement ", measurement_num, " has failed.")
         failed_inversion(xₐ, measurement)
     end    
     return results
@@ -299,7 +300,7 @@ function process_all_files(xₐ::AbstractDict,
     files = readdir(data_path);
     num_files = length(files)
     
-    @showprogress 1 "Computing..." for i=1:num_files
+    for i=1:num_files
         
         file = files[i]
         full_file = data_path*file
@@ -336,7 +337,7 @@ function process_all_files(xₐ::AbstractDict,
 
     num_files = length(datafiles)
 
-    @showprogress 1 "Computing..." for i=1:num_files
+    for i=1:num_files
         file = data_path * datafiles[i]
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
