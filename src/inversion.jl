@@ -273,20 +273,9 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     for (j, spectral_window) in enumerate(keys(spectral_windows))
 
         spectra = construct_spectra(molecules, ν_grid=spectral_window[1]-0.1:0.01:spectral_window[end]+0.1, T=xₐ["temperature"], p=xₐ["pressure"])
-        
-        
-        Threads.@threads for i=1:num_measurements
-            println(i)
-            
-            measurement = get_measurement(i, dataset, spectral_window[1], spectral_window[end])
-            f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
-            @time results[j,i] = try
-                nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
-            catch
-                println("inversion for measurement ", i," failed")
-                failed_inversion(xₐ, measurement)
-            end
-        end
+        out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
+        results[j,:] = out;
+
     end
     return results
 end
