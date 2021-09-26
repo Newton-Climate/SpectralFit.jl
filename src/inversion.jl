@@ -269,9 +269,9 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     results = Array{InversionResults}(undef, (num_windows, num_measurements));
     println("Beginning inversion")
     
-    for i=1:num_measurements
-        println(i)
-        for (j, spectral_window) in enumerate(keys(spectral_windows))
+    for (j, spectral_window) in enumerate(keys(spectral_windows))
+        Threads.@threads for i=1:num_measurements
+            println(i)
             results[j,i] = fit_spectra(i, xₐ, dataset, molecules, spectral_window, inversion_setup)
         end
     end
