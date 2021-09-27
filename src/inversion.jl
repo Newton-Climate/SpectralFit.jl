@@ -211,6 +211,7 @@ end
 
 function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
     
+    println(measurement_num)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
 
     # Use a-priori pressure and temperature if given
