@@ -210,13 +210,17 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
 
     while t₁ < t_final
         indexes = findall(t->(t>=t₁ && t<=t₂), timestamps)
+        
+        # in the case where we get no idnexes, this averaging won't fail
+        if length(indexes) < 1; break; end;
 
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
         num_averaged_measurements[i] = length(indexes) # save number of averaged measurements per window
         averaging_times[i] = (t₁, t₂)
-        machine_time[i] = dataset.time[indexes[1]];
+        machine_time[i] = dataset.time[indexes[1]]
+        
 
         # update variables
         i += 1

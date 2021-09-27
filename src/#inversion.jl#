@@ -270,7 +270,6 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     num_windows = length(keys(spectral_windows));
     results = Array{InversionResults}(undef, (num_windows, num_measurements));
     println("Beginning inversion")
-    addprocs(2)
     
     for (j, spectral_window) in enumerate(keys(spectral_windows))
 
