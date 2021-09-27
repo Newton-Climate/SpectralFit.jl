@@ -112,12 +112,12 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     while i<10 && δᵢ>tolerence
         # evaluate the model and jacobian
         result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        @time ForwardDiff.jacobian!(result, f, xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, kᵢ = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm 
-        @time x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
+        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
         xᵢ = x; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
@@ -135,8 +135,8 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    @time S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    @time return InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
+    S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
+    return InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
 end#function
 
 
