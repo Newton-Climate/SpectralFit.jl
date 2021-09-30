@@ -83,14 +83,11 @@ function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, sp
     return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
 end#function
 
-function failed_inversion(xₐ::Union{OrderedDict, Array{Float64}}, measurement::Measurement)
+function failed_inversion(xₐ::OrderedDict, measurement::Measurement)
 
-    if typeof(xₐ) <: AbstractDict
-        xₐ = assemble_state_vector!(xₐ)
-    end
-    
-    
-    return InversionResults(measurement.time, measurement.machine_time, NaN*xₐ, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
+    # define an x vector of NaNs 
+    x_error = OrderedDict(key => NaN*xₐ[key] for key in keys(xₐ))    
+    return InversionResults(measurement.time, measurement.machine_time, x_error, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
 end
 
 
