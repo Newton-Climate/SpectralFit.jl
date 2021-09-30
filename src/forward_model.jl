@@ -1,7 +1,8 @@
 
 using Interpolations, Statistics
 
-global OCO_interp = OCO_spectra("OCO_spectra.hdf")
+OCO_path = joinpath(dirname(pathof(SpectralFits)), "..", "CrossSections_data", "OCO_spectra.hdf")
+global OCO_interp = OCO_spectra(OCO_path)
 
 function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
     """
