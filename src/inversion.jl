@@ -4,10 +4,17 @@ using ProgressMeter, JLD2
 
 
 
-function make_obs_error(measurement::Measurement; a::Float64=0.3*0.01611750368314077)
+function make_obs_error(measurement::Measurement; σ=nothing)
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
-    value = 1/(a*sqrt(base))^2 * ones(n)
+
+    if σ==nothing
+        noise = measurement.σ / sqrt(measurement.num_averaged_measurements)
+    else
+        noise = σ
+    end
+    
+    value = @. 1/noise^2 * ones(n)
     Sₑ = Diagonal(value)
     return Sₑ
 end
@@ -27,15 +34,7 @@ function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
         σ = assemble_state_vector!(σ)
     end
     
-    n = length(σ)
-    Sₐ⁻¹::Array{Float64,2} = zeros(n,n)
-    x = 1 ./ σ.^2
-   # bad_idx = findall(x.==Inf)
-     #[x[i] = 1/1.0e10 for i in bad_idx]
-
-    for i=1:n
-        Sₐ⁻¹[i,i] = x[i]
-    end
+    Sₐ⁻¹ = Diagonal((1 ./ σ).^2)
     return Sₐ⁻¹
 end
 
@@ -92,48 +91,62 @@ end
 
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
-    
-    Sₑ = make_obs_error(measurement, a=0.0019656973992654737);
+
+
+    Sₑ = make_obs_error(measurement)
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
-    kᵢ = zeros(length(y), length(x₀));
     xᵢ = x₀;
     xᵢ = assemble_state_vector!(xᵢ)
     tolerence = 1.0e-4;
-    δᵢ = 10;
+    δᵢ = 10.0;
     i = 1
-    fᵢ = f(xᵢ)
+    state_length, grid_length = length(xᵢ), length(measurement.grid)
+        kᵢ = zeros(grid_length, state_length)
+        fᵢ = zeros(grid_length)
+        f_old = similar(fᵢ)
+        chunk_size = state_length < 30 ? state_length : 20
+    cfg = ForwardDiff.JacobianConfig(f,xᵢ, ForwardDiff.Chunk{chunk_size}())
+    result = DiffResults.JacobianResult(measurement.grid, xᵢ);
+    jf! = (out, _x) -> ForwardDiff.jacobian!(out, f, _x, cfg)
     
-
     # begin the non-linear fit
-    while i<10 && δᵢ>tolerence
-        # evaluate the model and jacobian
-        result = DiffResults.JacobianResult(zeros(length(measurement.grid)), xᵢ);
-        ForwardDiff.jacobian!(result, f, xᵢ);
-        f_old = fᵢ # reassign model output 
-        fᵢ, kᵢ = result.value, result.derivs[1]
+     while i<10 && δᵢ>tolerence
 
-        # Gauss-Newton Algorithm 
-        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
-        xᵢ = x; # reassign state vector for next iteration
+        # evaluate the model and jacobian
+        
+        #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
+         #ForwardDiff.jacobian!(result, f, xᵢ)#,
+         result = jf!(result, xᵢ)
+        fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
+
+        # Gauss-Newton Algorithm
+         xᵢ[:] = xᵢ .+ inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y .- fᵢ);
+         
 
         #evaluate relative difference between this and previous iteration 
-        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
+        δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
         if i==1 #prevent premature ending of while loop
-            δᵢ = 1
+            δᵢ = 1.0
         end
 
         if inversion_setup["verbose_mode"]
             println("δᵢ for iteration ",i," is ",δᵢ)
         end
         
-        i = i+1
-    end #while loop
+         i = i+1
+         f_old[:] = fᵢ
+     end #while loop
+    
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience 
-    return InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
+    S = inv(kᵢ'*Sₑ*kᵢ); # posterior error covarience
+
+        output = InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ, I)
+
+    
+    return output
 end#function
 
 
@@ -141,7 +154,7 @@ end#function
 function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
     
 
-    Sₒ⁻¹ = SpectralFits.make_obs_error(measurement, a=0.0019656973992654737);
+    Sₒ⁻¹ = SpectralFits.make_obs_error(measurement)
     
     #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
@@ -150,7 +163,7 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
     xᵢ = xₐ
     Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
     tolerence = 1.0e-4;
-    γ = 1;
+    γ = 1.0;
     δᵢ = 15;
     i = 1
     fᵢ = f(xᵢ)
@@ -161,7 +174,7 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
 
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
-        ForwardDiff.jacobian!(result, f, xᵢ);
+        @time ForwardDiff.jacobian!(result, f, xᵢ);
         f_old = fᵢ # reassign model output 
         fᵢ, Kᵢ = result.value, result.derivs[1]
 

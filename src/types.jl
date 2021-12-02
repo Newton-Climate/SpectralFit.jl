@@ -1,4 +1,5 @@
 using Dates
+using ForwardDiff:Dual
 
     """stores the metadata of hitran line-lists and coefficients in type HitranTable"""
 struct MolecularMetaData
@@ -13,14 +14,14 @@ end
 
 
 """type to store cross-sections, pressure, temperature, and line-list parameters"""
-mutable struct Molecule
-    
-    cross_sections
-    grid
-    p
-    T
-    hitran_table
-    model
+mutable struct Molecule{FT}
+   
+    cross_sections::AbstractArray
+    grid::Union{AbstractRange{FT}, Array{FT,1}}
+    p::FT
+    T::FT
+    hitran_table::HitranTable{FT}
+    model::HitranModel
 end
 
     """Type to store molecules"""
@@ -62,6 +63,7 @@ mutable struct FrequencyCombDataset <: Dataset
     time::Vector{Any}
     pathlength::Float64
     timestamp::Array{Float64,1}
+    σ::Vector{Float64}
 end 
 
 struct TimeAveragedFrequencyCombDataset <: FrequencyComb
@@ -75,6 +77,7 @@ struct TimeAveragedFrequencyCombDataset <: FrequencyComb
     num_averaged_measurements::Vector{Int64}
     averaging_window::Dates.Period
     timestamp::Array{Float64,1}
+    σ::Vector{Float64}
 end
 
 
@@ -91,5 +94,6 @@ mutable struct FrequencyCombMeasurement <: Measurement
     num_averaged_measurements::Int64
     averaging_window::Any
     machine_time::Float64
+    σ::Float64
 end
     

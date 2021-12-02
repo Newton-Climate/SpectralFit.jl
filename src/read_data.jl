@@ -11,7 +11,7 @@ end
 """constructor for MolecularMetaData
 Stores parameters for the HiTran parameters
 Construct one object per molecule being analyzed"""
-function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange{<:Real}, architecture=CPU())
+function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange{<:Real}; architecture=CPU())
 
     hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
@@ -46,7 +46,7 @@ end #function calculate_cross_sections
 - Calculates the cross-sections of all input molecules inputted as type MolecularMetaData
 - returns Molecules as a Dict
 """
-function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295, use_TCCON::Bool=false, architecture=CPU())
+function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295)
     
     cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
     out = OrderedDict(molecules[i].molecule => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table, molecules[i].model) for i=1:length(molecules))
@@ -60,16 +60,10 @@ end #function calculate_cross_sections
 - recalculates the cross-sections given the Molecule type
 - used in the forward model for institue cross-sections calculation 
 """
-function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001, architecture=CPU())
-    
-        #model = make_hitran_model(molecule.hitran_table, Voigt(), architecture=architecture);
-    grid = molecule.grid[1]:mean(diff(molecule.grid)):molecule.grid[end];
-
+function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001)
+   
     # recalculate cross-sections
-    cross_sections = absorption_cross_section(molecule.model, grid, p, T);
-    
-    # store rsults in a struct
-    molecule = Molecule(cross_sections, grid, p, T, molecule.hitran_table, molecule.model)
+    molecule.cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
     return molecule
 end #function calculate_cross_sections!
 
@@ -110,9 +104,9 @@ recalcualtes the cross-sections of Molecules type stored in the Spectra type
     return spectra
 end
 
-function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290, architecture=CPU(), use_OCO=false)
-    for species in keys(spectra)
-        spectra[species] = calculate_cross_sections!(spectra[species], p=p, T=T, architecture=architecture);
+function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
+    for (species, molecule) in spectra
+        spectra[species].cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
     end    
     return spectra
 end
@@ -127,7 +121,7 @@ function construct_spectra_by_layer(molecules::Array{MolecularMetaData,1}; p::Ar
     n_levels = length(p) 
     spectra = Array{OrderedDict}(undef, n_levels)
     for i=1:length(p)
-        spectra[i] = SpectralFits.construct_spectra(molecules, p=p[i], T=T[i], ν_min=ν_min, δν=δν, ν_max=ν_max)
+        spectra[i] = construct_spectra(molecules, p=p[i], T=T[i], ν_grid=ν_min:δν:ν_max)
     end
     return spectra
 end
@@ -136,7 +130,7 @@ end
 function construct_spectra_by_layer!(spectra::Array{OrderedDict,1}; p::Array{<:Real,1}=p_default, T::Array{<:Real,1}=T_default)
     num_levels = length(p)
     for i=1:num_levels
-        spectra[i] = SpectralFits.construct_spectra!(spectra[i], p=p[i], T=T[i])
+        spectra[i] = construct_spectra!(spectra[i], p=p[i], T=T[i])
     end
     return spectra
 end
@@ -182,8 +176,11 @@ end
     intensity = HDF5.read(file, datafields[5])
     close(file)
 
+    # calculate noise
+    σ = calc_DCS_noise(grid, intensity)
+
     # save to a struct
-    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time)
+    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time, σ)
     return dataset
 end # function read_DCS_data
 
@@ -203,7 +200,8 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
     averaged_measurements = Array{Float64}(undef,(num_measurements, size(dataset.intensity)[2]))
     averaged_temperature = Array{Float64}(undef, num_measurements)
     averaged_pressure = Array{Float64}(undef, num_measurements)
-        averaging_times = Array{Tuple{DateTime,DateTime}}(undef, num_measurements)
+    averaging_times = Array{Tuple{DateTime,DateTime}}(undef, num_measurements)
+    averaged_σ = Array{Float64,1}(undef, num_measurements)
     num_averaged_measurements = Array{Int64}(undef, num_measurements)
     machine_time = Array{Float64}(undef,num_measurements)
     i= 1;
@@ -217,6 +215,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
+        averaged_σ[i] = mean(dataset.σ[indexes])
         num_averaged_measurements[i] = length(indexes) # save number of averaged measurements per window
         averaging_times[i] = (t₁, t₂)
         machine_time[i] = dataset.time[indexes[1]]
@@ -228,7 +227,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         t₂ = t₂ + δt
     end # while loop
 
-    data_out = TimeAveragedFrequencyCombDataset(dataset.filename, averaged_measurements, dataset.grid, averaged_temperature, averaged_pressure, averaging_times, dataset.pathlength, num_averaged_measurements, δt, machine_time)
+    data_out = TimeAveragedFrequencyCombDataset(dataset.filename, averaged_measurements, dataset.grid, averaged_temperature, averaged_pressure, averaging_times, dataset.pathlength, num_averaged_measurements, δt, machine_time, averaged_σ)
     return data_out
 end
 
@@ -251,6 +250,7 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
     T = dataset.temperature[i]
     δz = dataset.pathlength
     time = dataset.time[i]
+    σ = dataset.σ[i]
 
     # find indexes
     indexes = find_indexes(ν_min, ν_max, dataset.grid)
@@ -260,9 +260,9 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
 
     # save to struct FrequencyCombMeasurement
     if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i])
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i], σ)
         elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i])
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], σ)
     end # if statement
     
     return measurement
@@ -283,9 +283,9 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
 
     # save to struct FrequencyCombMeasurement
     if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i])
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i], dataset.σ[i])
         elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i])
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], dataset.σ[i])
     end # if statement
     
     return measurement
