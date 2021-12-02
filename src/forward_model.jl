@@ -27,7 +27,7 @@ transmission::Vector: the calculated tranmission
     return exp.(-τ)
 end
 
-function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict)
+function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict, vcd::Real)
     """
     Calculates the transmission given Beer's Law
 
@@ -41,11 +41,10 @@ function calculate_transmission(x::AbstractDict, measurement::Measurement, spect
 transmission::Vector: the calculated tranmission
 """
     
-    vcd = measurement.vcd
     k = collect(keys(spectra))
     τ = zeros(size(spectra[k[1]].cross_sections));
     for key in keys(spectra)
-        τ += vcd * x[key] * spectra[key].cross_sections
+        τ += @. vcd * x[key] * spectra[key].cross_sections
         end
     return exp.(-τ)
 end
@@ -156,7 +155,6 @@ function fit_pT!(x::AbstractDict, measurement::Measurement, spectra::AbstractDic
     return spectra
 end
 
-        
 
 function generate_forward_model(measurement::Measurement, spectra::Spectra, inversion_setup::Dict{String,Real})
     #OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
@@ -185,6 +183,7 @@ function generate_forward_model(measurement::Measurement, spectra::Spectra, inve
 end
 
 
+
 function generate_forward_model(x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     """
 - generates a forward model given the inversion parameters
@@ -208,11 +207,25 @@ f::Function: the forward model called as f(x::Vector)
     
     function f(x)
         # convert the state vector to a dict with labelled fields
-        x = assemble_state_vector!(x, x₀_fields, inversion_setup)
+        if typeof(x) <: AbstractArray
+            x = assemble_state_vector!(x, x₀_fields, inversion_setup)
+        end
+        
 
+
+        if haskey(x, "n_air_coef")
+            spectra["CH4"].hitran_table.n_air = spectra["CH4"].hitran_table.n_air * x["n_air_coef"]
+        end
+
+        p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
+        T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
+
+        vcd = calc_vcd(p, T, measurement.pathlength)
+
+        
         # update the cross-sections given pressure and temperature
         if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
-            spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"], architecture=inversion_setup["architecture"], use_OCO=inversion_setup["use_OCO"])
+            spectra = construct_spectra!(spectra, p=p, T=T)
 
             ### comment these out for now.
             # function doesn't work when doing forwarddiff where one of p/T are Dual Numbers 
@@ -224,19 +237,19 @@ f::Function: the forward model called as f(x::Vector)
         end
         
         #for the OCO line-list for CO₂
-        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
+#        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
         #println("fitting temperature with OCO database")
-            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
-        end
+#            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
+#        end
         
         # apply Beer's Law
-        transmission = calculate_transmission(x, measurement, spectra)
+         transmission = calculate_transmission(x, measurement, spectra, vcd)
 
-        # down-sample to instrument grid 
-        transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
+        # down-sample to instrument grid
+         transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)
 
-        # calculate lgendre polynomial coefficients and fit baseline 
-        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], length(transmission))'
+        # calculate lgendre polynomial coefficients and fit baseline
+         polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], length(transmission))'
         intensity = transmission .* polynomial_term
         return intensity
     end
@@ -256,7 +269,6 @@ function generate_profile_model(xₐ::AbstractDict, measurement::Measurement, sp
             x = assemble_state_vector!(x, x_fields, num_levels, inversion_setup)
         end
         if inversion_setup["fit_pressure"]
-            println("fitting p and T")
             p, T = x["pressure"], x["temperature"]
                     spectra = construct_spectra_by_layer!(spectra, p=p, T=T)
         end
