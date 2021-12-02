@@ -1,4 +1,4 @@
-using NCDatasets, RecursiveArrayTools
+using NCDatasets, RecursiveArrayTools, Polynomials
 
 """Finds the indexes given values ν_min:ν_max"""
 function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
@@ -30,7 +30,7 @@ function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)
 end # function calc_vcd
 
 """Calculate the vertical column density given pressure, temperature, and layer thickness"""
-function calc_vcd(p::Float64, T::Float64, δz::Float64)
+function calc_vcd(p::Real, T::Real, δz::Float64)
     VMR_H₂O = 0
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
@@ -119,6 +119,16 @@ function calc_gain_matrix(inversion_results::InversionResults)
     return G
 end
 
+function calc_χ²(result::InversionResults)
+    if typeof(result.x) <: AbstractDict
+        x = assemble_state_vector!(result.x)
+    else
+        x=result.x
+    end
+    
+    χ² = (result.model - result.measurement)'* result.Sₑ * (result.model - result.measurement) / (length(result.model)-length(x))
+    return χ²
+end
 
 """convert an array of arrays to an array"""
 function list2array(array_in::Array)
@@ -179,3 +189,90 @@ function save_results(filename::String, results::Array{InversionResults,2}, expe
     return true
 end
 
+function calc_DCS_noise(data::Dataset)
+
+    # select spectrally flat region 
+    ν_min, ν_max = 6255.1, 6255.4
+
+    # find wavelength indices:
+    ind = intersect(findall(data.grid .> ν_min), findall(data.grid .< ν_max))
+
+    signal_total = mean(data.intensity, dims=2);
+
+    # Subset data for spectral range
+    data_subset = data.intensity[:,ind]
+    grid_subset = data.grid[ind] .- mean(data.grid[ind])
+
+    # Number of spectra in there:
+    n_spec = size(data_subset,1)
+
+    # loop over all individual spectra:
+    mod = similar(data_subset)
+    for i=1:n_spec
+        # take that time step
+        flat_region =  data_subset[i,:]
+
+        # fit out the baseline with a 3rd degree polynomial
+        fitted = fit(grid_subset, flat_region, 3)
+
+        # evaluate the trend given the polynomial coefficients
+        mod[i,:] = fitted.(grid_subset)
+    end
+
+    # Mean residual (has little impact here)
+    mm = mean(mod' .- data_subset', dims=2)
+    # Standard deviation from fit (mean residual removed):
+    sm = std(mod' .- data_subset' .- mm, dims=1)
+
+    # Fit noise model (linear with offset):
+    slope_noise_fit = sqrt.(signal_total[:,1]) \ sm[1,:]
+
+    # This will now give you the total noise, i.e. for an individual (single) sounding, the noise 1sigma is just Se = slope_noise_fit * sqrt(signal_total[:,1])
+    σ = mean(slope_noise_fit * sqrt.(signal_total[:,1]))
+    return σ
+end
+
+
+function calc_DCS_noise(grid::Array{Float64,1}, intensity::Array{Float64,2})
+
+    signal_total = mean(intensity, dims=2);
+
+    # find wavelength indices over flat region :
+        ν_min, ν_max = 6255.1, 6255.4
+    ind = intersect(findall(grid .> ν_min), findall(grid .< ν_max))
+
+    # Subset data for spectral range
+    data_subset = intensity[:,ind]
+    grid_subset = grid[ind] .- mean(grid[ind])
+
+    # Number of spectra in there:
+    n_spec = size(data_subset,1)
+
+    # loop over all individual spectra:
+    mod = similar(data_subset)
+    for i=1:n_spec
+        # take that time step
+        flat_region =  data_subset[i,:]
+
+        # fit out the baseline with a 3rd degree polynomial
+        fitted = fit(grid_subset, flat_region, 3)
+
+        # evaluate the trend given the polynomial coefficients
+        mod[i,:] = fitted.(grid_subset)
+    end
+
+    # Mean residual (has little impact here)
+    mm = mean(mod' .- data_subset', dims=2)
+    # Standard deviation from fit (mean residual removed):
+    sm = std(mod' .- data_subset' .- mm, dims=1)
+
+    # Fit noise model (linear with offset):
+    slope_noise_fit = sqrt.(signal_total[:,1]) \ sm[1,:]
+
+    # This will now give you the total noise, i.e. for an individual (single) sounding, the noise 1sigma is just Se = slope_noise_fit * sqrt(signal_total[:,1])
+    σ = slope_noise_fit * sqrt.(signal_total[:,1])
+    return σ
+end
+
+
+    
