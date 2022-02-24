@@ -115,8 +115,6 @@ end
 function fit_pressure!(x::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::Dict)
     if inversion_setup["use_OCO"] == false && inversion_setup["use_TCCON"] == false
         println("inside pressure function")
-        println(typeof(x))
-        println(typeof(x["pressure"]))
         spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
     elseif inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
         println("fitting pressure with OCO database")
@@ -211,11 +209,6 @@ f::Function: the forward model called as f(x::Vector)
             x = assemble_state_vector!(x, x₀_fields, inversion_setup)
         end
         
-
-
-        if haskey(x, "n_air_coef")
-            spectra["CH4"].hitran_table.n_air = spectra["CH4"].hitran_table.n_air * x["n_air_coef"]
-        end
 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature

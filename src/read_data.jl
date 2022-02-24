@@ -49,6 +49,7 @@ end #function calculate_cross_sections
 function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295)
     
     cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
+    print(typeof(cross_sections))
     out = OrderedDict(molecules[i].molecule => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table, molecules[i].model) for i=1:length(molecules))
     return out
 end #function calculate_cross_sections

@@ -297,6 +297,24 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     return results
 end
 
+function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Vector)
+    
+    num_measurements = length(dataset.pressure) # number of total measurements
+    modelled = Array{InversionResults}(undef, num_measurements)
+    num_windows = length(spectral_windows);
+    results = Array{InversionResults}(undef, (num_windows, num_measurements));
+    println("Beginning inversion")
+    
+    for (j, spectral_window) in enumerate(spectral_windows)
+
+        spectra = construct_spectra(molecules, ν_grid=spectral_window[1]-0.1:0.01:spectral_window[end]+0.1, T=xₐ["temperature"], p=xₐ["pressure"])
+        out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
+        results[j,:] = out;
+
+    end
+    return results
+end
+
 
 
         
