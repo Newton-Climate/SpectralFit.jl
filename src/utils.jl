@@ -1,4 +1,4 @@
-using NCDatasets, RecursiveArrayTools, Polynomials
+using RecursiveArrayTools, Polynomials
 
 """Finds the indexes given values ν_min:ν_max"""
 function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
@@ -147,46 +147,6 @@ function list2array!(array_out::Array, array_in::Array)
     v = VectorOfArray(array_in)
     array_out = convert(Array, v)
     return array_out'
-end
-
-"""save the output of an inversion  to NetCDF"""
-function save_results(filename::String, results::Array{InversionResults,2}, experiment_label::Union{String, Array{String,1}})
-
-    println("Saving file...")
-    println(filename)
-    file = NCDataset(filename, "c");
-    num_experiments, num_datapoints = size(results)
-    defDim(file, "start_time", num_datapoints)
-    machine_time = [results[1,i].machine_time for i=1:num_datapoints]
-    defVar(file, "start_time", machine_time, ("start_time",))
-
-    for i=1:num_experiments
-       timeseries = results[i,:]
-           
-       group = defGroup(file, experiment_label[i])
-        defDim(group, "spectral_grid", length(timeseries[1].grid))
-        defVar(group, "spectral_grid", timeseries[1].grid, ("spectral_grid",))
-        model = defVar(group, "model", Float64, ("start_time", "spectral_grid"))
-        measurement = defVar(group, "measurement", Float64, ("start_time", "spectral_grid"))
-
-            # save to file
-            measurement[:,:] = list2array([timeseries[i].measurement for i=1:num_datapoints])
-        model[:,:] = list2array([timeseries[i].model for i=1:num_datapoints])
-
-        # save data from retrieved state vector
-        for key in keys(timeseries[1].x)
-            if typeof(key) <: MolecularMetaData
-                vmr = defVar(group, key.molecule, Float64, ("start_time",))
-                vmr[:] = [timeseries[i].x[key] for i =1:num_datapoints]
-            elseif key == "pressure" || key == "temperature"
-                vmr = defVar(group, key, Float64, ("start_time",))
-                vmr[:] = [timeseries[i].x[key] for i =1:num_datapoints]
-        end
-    end
-    end
-        
-    close(file)
-    return true
 end
 
 function calc_DCS_noise(data::Dataset)
