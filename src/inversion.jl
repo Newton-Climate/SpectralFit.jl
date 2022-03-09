@@ -4,7 +4,9 @@ using ProgressMeter, JLD2
 
 
 
-function make_obs_error(measurement::Measurement; σ=nothing)
+function make_obs_error(measurement::Measurement;
+                        σ::Union{Nothing, Float64}=nothing,
+                        masked_indexes::Union{Vector{Int64}, Nothing}=nothing)
     
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
@@ -16,7 +18,15 @@ function make_obs_error(measurement::Measurement; σ=nothing)
     end
     
     value = @. 1/noise^2 * ones(n)
-     Sₑ⁻¹ = Diagonal(value)
+    Sₑ⁻¹ = Diagonal(value)
+
+    if masked_indexes != nothing
+        for i in masked_indexes
+            Sₑ⁻¹[i,i] = 1/(1e5 * noise)^2
+        end
+    end
+    
+        
     return Sₑ⁻¹ 
 end
 
@@ -87,9 +97,14 @@ end
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
-    if haskey(inversion_setup, "Obs_covarience")
+    if haskey(inversion_setup, "obs_covariance")
+        println("Using user-defined covariance")
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
+    elseif haskey(inversion_setup, "masked_indexes")
+        println("masking out selected wave-numbers")
+        Sₑ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
     else
+        println("default covariance")
         Sₑ⁻¹ = make_obs_error(measurement)
     end
     
@@ -116,6 +131,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
          result = jf!(result, xᵢ)
+         x_old = copy(xᵢ)
         fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm
@@ -123,7 +139,8 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
          
 
         #evaluate relative difference between this and previous iteration 
-        δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
+         #δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
+         δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
         if i==1 #prevent premature ending of while loop
             δᵢ = 1.0
         end
@@ -150,15 +167,20 @@ end#function
 
 """fit over an atmospheric column with multiple layers"""
 function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
-    
-    if haskey(inversion_setup, "obs_covarience")
-        Sₒ⁻¹ = inversion_setup["obs_covarience"]
-        else
-        Sₒ⁻¹ = SpectralFits.make_obs_error(measurement)
+
+    # define the observational prior error covariance
+        if haskey(inversion_setup, "obs_covariance")
+        println("Using user-defined covariance")
+        Sₑ⁻¹ = inversion_setup["obs_covarience"]
+    elseif haskey(inversion_setup, "masked_indexes")
+        println("masking out selected wave-numbers")
+        Sₑ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+    else
+        println("default covariance")
+        Sₑ⁻¹ = make_obs_error(measurement)
     end
     
     
-    #Sₑ = diagm(ones(length(measurement.intensity)));
     y = measurement.intensity;
     Kᵢ = zeros(length(y), length(x₀));
     xₐ = assemble_state_vector!(x₀);
