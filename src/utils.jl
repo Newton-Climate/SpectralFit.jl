@@ -231,7 +231,7 @@ function calc_DCS_noise(grid::Array{Float64,1}, intensity::Array{Float64,2})
 
     # This will now give you the total noise, i.e. for an individual (single) sounding, the noise 1sigma is just Se = slope_noise_fit * sqrt(signal_total[:,1])
     σ = slope_noise_fit * sqrt.(signal_total[:,1])
-    return σ
+    return σ.^2
 end
 
 

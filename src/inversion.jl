@@ -5,24 +5,24 @@ using ProgressMeter, JLD2
 
 
 function make_obs_error(measurement::Measurement;
-                        σ::Union{Nothing, Float64}=nothing,
+                        σ²::Union{Nothing, Float64}=nothing,
                         masked_indexes::Union{Vector{Int64}, Nothing}=nothing)
     
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
 
     if σ==nothing # get noise from the instrument
-        noise = measurement.σ / sqrt(measurement.num_averaged_measurements)
+        noise = measurement.σ²
     else #get noise from user 
-        noise = σ
+        noise = σ²
     end
     
-    value = @. 1/noise^2 * ones(n)
+    value = @. 1/noise * ones(n)
     Sₑ⁻¹ = Diagonal(value)
 
     if masked_indexes != nothing
         for i in masked_indexes
-            Sₑ⁻¹[i,i] = 1/(1e5 * noise)^2
+            Sₑ⁻¹[i,i] = 1/(1e5 * noise)
         end
     end
     

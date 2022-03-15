@@ -177,10 +177,10 @@ end
     close(file)
 
     # calculate noise
-    σ = calc_DCS_noise(grid, intensity)
+    σ² = calc_DCS_noise(grid, intensity)
 
     # save to a struct
-    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time, σ)
+    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time, σ²)
     return dataset
 end # function read_DCS_data
 
@@ -201,7 +201,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
     averaged_temperature = Array{Float64}(undef, num_measurements)
     averaged_pressure = Array{Float64}(undef, num_measurements)
     averaging_times = Array{Tuple{DateTime,DateTime}}(undef, num_measurements)
-    averaged_σ = Array{Float64,1}(undef, num_measurements)
+    averaged_σ² = Array{Float64,1}(undef, num_measurements)
     num_averaged_measurements = Array{Int64}(undef, num_measurements)
     machine_time = Array{Float64}(undef,num_measurements)
     i= 1;
@@ -215,7 +215,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
-        averaged_σ[i] = mean(dataset.σ[indexes])
+        averaged_σ²[i] = 1/length(indexes)^2 * sum(dataset.σ²[indexes])
         num_averaged_measurements[i] = length(indexes) # save number of averaged measurements per window
         averaging_times[i] = (t₁, t₂)
         machine_time[i] = dataset.time[indexes[1]]
@@ -227,7 +227,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         t₂ = t₂ + δt
     end # while loop
 
-    data_out = TimeAveragedFrequencyCombDataset(dataset.filename, averaged_measurements, dataset.grid, averaged_temperature, averaged_pressure, averaging_times, dataset.pathlength, num_averaged_measurements, δt, machine_time, averaged_σ)
+    data_out = TimeAveragedFrequencyCombDataset(dataset.filename, averaged_measurements, dataset.grid, averaged_temperature, averaged_pressure, averaging_times, dataset.pathlength, num_averaged_measurements, δt, machine_time, averaged_σ²)
     return data_out
 end
 
@@ -250,7 +250,7 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
     T = dataset.temperature[i]
     δz = dataset.pathlength
     time = dataset.time[i]
-    σ = dataset.σ[i]
+    σ² = dataset.σ²[i]
 
     # find indexes
     indexes = find_indexes(ν_min, ν_max, dataset.grid)
@@ -262,7 +262,7 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
     if typeof(dataset) == FrequencyCombDataset
         measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i], σ)
         elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], σ)
+        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], σ²)
     end # if statement
     
     return measurement

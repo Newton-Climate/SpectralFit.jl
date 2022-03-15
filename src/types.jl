@@ -63,7 +63,7 @@ mutable struct FrequencyCombDataset <: Dataset
     time::Vector{Any}
     pathlength::Float64
     timestamp::Array{Float64,1}
-    σ::Vector{Float64}
+    σ²::Vector{Float64}
 end 
 
 struct TimeAveragedFrequencyCombDataset <: FrequencyComb
@@ -77,7 +77,7 @@ struct TimeAveragedFrequencyCombDataset <: FrequencyComb
     num_averaged_measurements::Vector{Int64}
     averaging_window::Dates.Period
     timestamp::Array{Float64,1}
-    σ::Vector{Float64}
+    σ²::Vector{Float64}
 end
 
 
@@ -94,6 +94,6 @@ mutable struct FrequencyCombMeasurement <: Measurement
     num_averaged_measurements::Int64
     averaging_window::Any
     machine_time::Float64
-    σ::Float64
+    σ²::Float64
 end
     
