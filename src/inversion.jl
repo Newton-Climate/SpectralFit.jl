@@ -11,7 +11,7 @@ function make_obs_error(measurement::Measurement;
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
 
-    if σ==nothing # get noise from the instrument
+    if σ²==nothing # get noise from the instrument
         noise = measurement.σ²
     else #get noise from user 
         noise = σ²
@@ -270,8 +270,9 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Data
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
-    catch
+    catch e
         println("Inversion for measurement ", measurement_num, " has failed.")
+        rethrow(e)
         failed_inversion(xₐ, measurement)
     end    
     return results
