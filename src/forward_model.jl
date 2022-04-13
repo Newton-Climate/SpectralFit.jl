@@ -213,7 +213,7 @@ f::Function: the forward model called as f(x::Vector)
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
 
-        vcd = calc_vcd(p, T, measurement.pathlength)
+        vcd = calc_vcd(p, T, measurement.pathlength, x["H2O"])
 
         
         # update the cross-sections given pressure and temperature

@@ -11,7 +11,7 @@ function make_obs_error(measurement::Measurement;
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
 
-    if σ==nothing # get noise from the instrument
+    if σ²==nothing # get noise from the instrument
         noise = measurement.σ²
     else #get noise from user 
         noise = σ²

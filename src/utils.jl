@@ -23,7 +23,7 @@ function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
 end
 
 """Calculate the vertical column density given humidity, pressure, temperature, and layer thickness"""
-function calc_vcd(p::Float64, T::Float64, δz::Float64, VMR_H₂O::Float64)    
+function calc_vcd(p::Real, T::Real, δz::Float64, VMR_H₂O::Real)    
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
     return vcd
