@@ -31,7 +31,7 @@ end # function calc_vcd
 
 """Calculate the vertical column density given pressure, temperature, and layer thickness"""
 function calc_vcd(p::Real, T::Real, δz::Float64)
-    VMR_H₂O = 0
+    VMR_H₂O = 0.0
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
     return vcd

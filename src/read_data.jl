@@ -19,9 +19,9 @@ function get_molecule_info(molecule::String, filename::String, molecule_num::Int
 end
 
 function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
-    model = load_interp_model(filepath)
+    model = load_interpolation_model(filepath)
     #hitran_table = read_hitran(filepath, mol=model.mol, iso=model.iso, ν_min=model.ν_grid[1], ν_max=model.ν_grid[end])
-        return MolecularMetaData(molecule, filepath, model.mol, model.iso, model.ν_grid, hitran_table, model)
+        return MolecularMetaData(molecule, filepath, model.mol, model.iso, model.ν_grid, hitran_table, itp_model)
     end
 
 
@@ -215,7 +215,7 @@ function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
-        averaged_σ²[i] = 1/length(indexes)^2 * sum(dataset.σ²[indexes])
+        averaged_σ²[i] = 1/length(indexes) * mean(dataset.σ²[indexes])
         num_averaged_measurements[i] = length(indexes) # save number of averaged measurements per window
         averaging_times[i] = (t₁, t₂)
         machine_time[i] = dataset.time[indexes[1]]

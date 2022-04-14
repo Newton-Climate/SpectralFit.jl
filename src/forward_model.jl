@@ -26,8 +26,6 @@ transmission::Vector: the calculated tranmission
     τ = vcd*(H₂O_vmr.*H₂O_cs .+ CH₄_vmr.*CH₄_cs .+ CO₂_vmr.*CO₂_cs .+ HDO_vmr.*HDO_cs)
     return exp.(-τ)
 end
-
-function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict, vcd::Real)
     """
     Calculates the transmission given Beer's Law
 
@@ -40,12 +38,23 @@ function calculate_transmission(x::AbstractDict, measurement::Measurement, spect
 - returns:
 transmission::Vector: the calculated tranmission
 """
-    
+function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict, vcd::Real)
+
     k = collect(keys(spectra))
     τ = zeros(size(spectra[k[1]].cross_sections));
     for key in keys(spectra)
-        τ += @. vcd * x[key] * spectra[key].cross_sections
-        end
+    τ += @. vcd * x[key] * spectra[key].cross_sections
+    end
+    return exp.(-τ)
+end
+
+function calculate_transmission(x::AbstractDict, measurement::Measurement, spectra::AbstractDict)
+
+    k = collect(keys(spectra))
+    τ = zeros(size(spectra[k[1]].cross_sections));
+    for key in keys(spectra)
+    τ += @. x[key] * spectra[key].cross_sections
+    end
     return exp.(-τ)
 end
 
@@ -212,10 +221,7 @@ f::Function: the forward model called as f(x::Vector)
 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
-
-        vcd = calc_vcd(p, T, measurement.pathlength)
-
-        
+      
         # update the cross-sections given pressure and temperature
         if inversion_setup["fit_pressure"] && inversion_setup["fit_temperature"]
             spectra = construct_spectra!(spectra, p=p, T=T)
@@ -230,13 +236,22 @@ f::Function: the forward model called as f(x::Vector)
         end
         
         #for the OCO line-list for CO₂
-#        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
-        #println("fitting temperature with OCO database")
-#            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
-#        end
+        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
+        println("fitting temperature with OCO database")
+            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
+        end
         
         # apply Beer's Law
-         transmission = calculate_transmission(x, measurement, spectra, vcd)
+        if haskey(inversion_setup, "fit_column") && inversion_setup["fit_column"] == true
+            println("fitting column")
+            transmission = calculate_transmission(x, measurement, spectra)
+            
+        else
+            println("fitting VMR")
+            vcd = calc_vcd(p, T, measurement.pathlength, x["H2O"])
+            transmission = calculate_transmission(x, measurement, spectra, vcd)
+        end
+        
 
         # down-sample to instrument grid
          transmission = apply_instrument(collect(spectra[x₀_fields[1]].grid), transmission, measurement.grid)

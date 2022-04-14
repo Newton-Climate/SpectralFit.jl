@@ -7,7 +7,7 @@ struct MolecularMetaData
     filename::String
     molecule_num::Integer
     isotope_num::Integer
-    ν_grid::AbstractRange
+    ν_grid::Union{AbstractRange, Array{Float64,1}}
     hitran_table
     model
 end
@@ -97,3 +97,11 @@ mutable struct FrequencyCombMeasurement <: Measurement
     σ²::Float64
 end
     
+Base.@kwdef struct SimpleInterpolationModel{FT} <: AbstractCrossSectionModel
+    itp
+    mol::Int
+    iso::Int
+    ν_grid::Union{Array{FT,1}, UnitRange{FT}}
+    p_grid::Union{Array{FT,1}, UnitRange{FT}}
+    T_grid::Union{Array{FT,1}, UnitRange{FT}}
+end
