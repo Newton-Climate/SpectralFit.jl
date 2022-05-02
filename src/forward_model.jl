@@ -4,28 +4,7 @@ using Interpolations, Statistics
 OCO_path = joinpath(dirname(pathof(SpectralFits)), "..", "CrossSections_data", "OCO_spectra.hdf")
 global OCO_interp = OCO_spectra(OCO_path)
 
-function calculate_transmission(x::Array{<:Real,1}, measurement::Measurement, spectra::Spectra)
-    """
-Calculates the transmission given Beer's Law
 
-- Arguements
-    1. xₐ::Vector: The state vector containing the parametres to fit
-2. measurement::Measurement: a Measurement type subsetted from the Dataset type
-3. spectra::Spectra: A Spectra type containing the Molecules type and thus cross-sections
-4. inversion_setup::AbstractDict: A dictionary contaiing the flags for the inversion
-
-- returns:
-transmission::Vector: the calculated tranmission
-"""
-
-    vcd = measurement.vcd
-    H₂O_vmr, H₂O_cs = x[H₂O_ind], spectra.H₂O.cross_sections
-    CH₄_vmr, CH₄_cs = x[CH₄_ind], spectra.CH₄.cross_sections
-    CO₂_vmr, CO₂_cs = x[CO₂_ind], spectra.CO₂.cross_sections
-    HDO_vmr, HDO_cs = x[HDO_ind], spectra.HDO.cross_sections
-    τ = vcd*(H₂O_vmr.*H₂O_cs .+ CH₄_vmr.*CH₄_cs .+ CO₂_vmr.*CO₂_cs .+ HDO_vmr.*HDO_cs)
-    return exp.(-τ)
-end
     """
     Calculates the transmission given Beer's Law
 
@@ -162,32 +141,6 @@ function fit_pT!(x::AbstractDict, measurement::Measurement, spectra::AbstractDic
     return spectra
 end
 
-
-function generate_forward_model(measurement::Measurement, spectra::Spectra, inversion_setup::Dict{String,Real})
-    #OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
-    
-    function f(x)
-#        OCO_interp = OCO_spectra("../../co2_v5.1_wco2scale=nist_sco2scale=unity.hdf")
-#        println(x[temperature_ind])
-#                spectra.CO₂.cross_sections = OCO_interp(spectra.CO₂.grid, x[temperature_ind], x[pressure_ind])
-        # println(typeof(x))
-
-        if inversion_setup["fit_pT"] && inversion_setup["use_OCO"] == false
-            spectra = construct_spectra!(spectra, p=x[pressure_ind], T=x[temperature_ind])
-        elseif inversion_setup["fit_pT"] && inversion_setup["use_OCO"] && spectra.CO₂.grid[1] >= 6140 && spectra.CO₂.grid[end] <= 6300
-            spectra.CO₂.cross_sections = OCO_interp(spectra.CO₂.grid, x[temperature_ind], x[pressure_ind])
-        end
-        
-        transmission = calculate_transmission(x, measurement, spectra)
-        transmission = apply_instrument(collect(spectra.HDO.grid), transmission, measurement.grid)
-        degree = inversion_setup["poly_degree"];
-        shape_parameters = x[end - degree+1 : end]
-        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], shape_parameters, length(transmission))'
-        intensity = transmission .* polynomial_term
-        return intensity
-    end
-    return f
-end
 
 
 
