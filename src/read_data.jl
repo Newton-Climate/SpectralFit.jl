@@ -45,9 +45,10 @@ end
 
     # calculate noise
     σ² = calc_DCS_noise(grid, intensity)
+    num_averaged_measurements, averaging_window = 1, nothing
 
     # save to a struct
-    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time, σ²)
+    dataset = map(i->FrequencyCombMeasurement(filename=filename, intensity=intensity[i,:], grid, temperature=temperature[i], pressure=pressure[i], time=time[i], pathlength=pathlength,                                              num_averaged_measurements=num_averaged_measurements[i], averaging_window=averaging_window[i], machine_time=time[i], σ²=σ²[i])
     return dataset
 end # function read_DCS_data
 
@@ -136,7 +137,7 @@ function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Rea
 end # function get_measurement
 
 
-function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real, p::Array{Float64,1}, T::Array{Float64,1})
+unction get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real, p::Array{Float64,1}, T::Array{Float64,1})
 
     i = measurement_num
     δz = dataset.pathlength
