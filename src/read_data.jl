@@ -229,3 +229,7 @@ Constructs an interpolation of the OCO cross-sections grid provided by JPL
     sitp = scale(itp, ν, T, p);
     return sitp
     end
+
+data = read_DCS_data("../20160921.h5")
+data = take_time_average!(data)
+measurement = get_measurement(1, data, 6050, 6120)

@@ -1,3 +1,5 @@
+using JLD2, vSmartMOM, OrderedCollections, vSmartMOM.Absorption
+include("types.jl")
 
 function load_interp_model(filepath::String)
     @load filepath itp_model
@@ -12,7 +14,9 @@ function get_molecule_info(molecule::String, filename::String, molecule_num::Int
 
     hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
-        return MolecularMetaData(molecule, filename, molecule_num, isotope_num, ν_grid, model)
+    return MolecularMetaData(molecule=molecule, filename=filename,
+                             molecule_num=molecule_num, isotope_num=isotope_num,
+                             ν_grid=ν_grid, model=model)
 end
 
 function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
@@ -46,7 +50,7 @@ end #function calculate_cross_sections
 function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295)
     
     cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
-    out = OrderedDict(molecules[i].molecule => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].model) for i=1:length(molecules))
+    out = OrderedDict(molecules[i].molecule => Molecule(cross_sections=cross_sections[i], grid=ν_grid, p=p, T=T, model=molecules[i].model) for i=1:length(molecules))
     return out
 end #function calculate_cross_sections
 
@@ -60,7 +64,7 @@ end #function calculate_cross_sections
 function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001)
    
     # recalculate cross-sections
-    molecule.cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
+    molecule.cross_sections[:] = absorption_cross_section(molecule.model, molecule.grid, p, T);
     return molecule
 end #function calculate_cross_sections!
 
@@ -73,7 +77,6 @@ function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
     for (species, molecule) in spectra
         spectra[species].cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
     end    
-    return spectra
 end
 
 
@@ -99,3 +102,28 @@ function construct_spectra_by_layer!(spectra::Array{OrderedDict,1}; p::Array{<:R
     end
     return spectra
 end
+
+
+inversion_setup = Dict{String,Any}(
+    "poly_degree" => 100,
+    "fit_pressure" => true,
+    "fit_temperature" => true,
+    "use_OCO" => false,
+"use_TCCON" => false,
+"verbose_mode" => true,
+"architecture" => CPU(),
+"fit_column" => false)
+
+# Just defining the spectral windows for each species
+ν_CH4 = (6050, 6120)
+ν_range = ν_CH4[1]:ν_CH4[2]
+ν_min , ν_max = ν_CH4[1]-1, ν_CH4[end]+1
+
+
+CH₄ = get_molecule_info("CH4", "../data/hit20_12CH4.par", 6, 1, ν_range, architecture=inversion_setup["architecture"])
+H₂O = get_molecule_info("H2O", "../data/hit20_H2O.par", 1, 1, ν_range, architecture=inversion_setup["architecture"])
+CO₂ = get_molecule_info("CO2", "../data/hit20_12CO2.par", 2,1,ν_range, architecture=inversion_setup["architecture"])
+
+# Calculate the cross-sections and store in dictionary
+molecules = [H₂O, CH₄, CO₂]
+spec = construct_spectra(molecules, ν_grid=ν_min:0.003:ν_max, p=1e3, T=290.0)
