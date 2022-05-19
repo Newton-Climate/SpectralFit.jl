@@ -4,7 +4,7 @@ using ProgressMeter, JLD2
 
 
 
-function make_obs_error(measurement::Measurement;
+function make_obs_error(measurement::AbstractMeasurement;
                         σ²::Union{Nothing, Float64}=nothing,
                         masked_indexes::Union{Vector{Int64}, Nothing}=nothing)
     
@@ -46,7 +46,7 @@ end
 
 
 
-function failed_inversion(xₐ::OrderedDict, measurement::Measurement)
+function failed_inversion(xₐ::OrderedDict, measurement::AbstractMeasurement)
 
     # define an x vector of NaNs 
     x_error = OrderedDict(key => NaN*xₐ[key] for key in keys(xₐ))    
@@ -54,7 +54,7 @@ function failed_inversion(xₐ::OrderedDict, measurement::Measurement)
 end
 
 
-function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, spectra::AbstractDict, inversion_setup::AbstractDict)
+function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
     if haskey(inversion_setup, "obs_covariance")
         println("Using user-defined covariance")
@@ -89,12 +89,13 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
-         result = jf!(result, xᵢ)
+         @time result = jf!(result, xᵢ)
          x_old = copy(xᵢ)
         fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
 
         # Gauss-Newton Algorithm
-         xᵢ[:] = xᵢ .+ inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y .- fᵢ);
+         xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ);
+         @show xᵢ[1:5]
          
 
         #evaluate relative difference between this and previous iteration 
@@ -117,7 +118,11 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::Measurement, sp
     χ² = (y-fᵢ)'* Sₑ⁻¹ *(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ⁻¹*kᵢ); # posterior error covarience
 
-        output = InversionResults(measurement.time, measurement.machine_time, assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup), y, fᵢ, χ², S, measurement.grid, kᵢ, Sₑ⁻¹, I)
+    x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
+    output = InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+                              x=x,
+                              measurement=y, model=fᵢ, χ²=χ², S=S,
+                              grid=measurement.grid, K=kᵢ, Sₑ=Sₑ⁻¹, Sₐ=ones(length(measurement.grid)))
 
     
     return output
@@ -125,7 +130,7 @@ end#function
 
 
 """fit over an atmospheric column with multiple layers"""
-function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
+function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
 
     # define the observational prior error covariance
         if haskey(inversion_setup, "obs_covariance")
@@ -196,7 +201,7 @@ end#function
 
 
 
-function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
+function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::AbstractDataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
     
     println(measurement_num)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
@@ -228,7 +233,7 @@ end
 
 
 
-function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::AbstractDict)
+function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::AbstractDict)
     num_measurements = length(dataset.pressure) # number of total measurements
     modelled = Array{InversionResults}(undef, num_measurements)
     num_windows = length(keys(spectral_windows));
@@ -245,7 +250,7 @@ function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{Mo
     return results
 end
 
-function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Vector)
+function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Vector)
     
     num_measurements = length(dataset.pressure) # number of total measurements
     modelled = Array{InversionResults}(undef, num_measurements)
@@ -270,7 +275,7 @@ end
 
         
 function process_all_files(xₐ::AbstractDict,
-                           dataset::Dataset,
+                           dataset::AbstractDataset,
                            molecules::Array{MolecularMetaData,1},
                            inversion_setup::Dict,
                            spectral_windows::AbstractDict,
@@ -307,7 +312,7 @@ end
 
 
 function process_all_files(xₐ::AbstractDict,
-                           dataset::Dataset,
+                           dataset::AbstractDataset,
                            molecules::Array{MolecularMetaData,1},
                            inversion_setup::Dict,
                            spectral_windows::AbstractDict,
