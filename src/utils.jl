@@ -3,8 +3,8 @@ using RecursiveArrayTools, Polynomials
 """Finds the indexes given values ν_min:ν_max"""
 function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
     
-    a = findlast(x -> x <= ν_min, ν_grid)
-    b = findfirst(x -> x >= ν_max, ν_grid)
+    a = findlast(x -> x < ν_min, ν_grid) + 1
+    b = findfirst(x -> x > ν_max, ν_grid) - 1
     indexes = collect(a:b)
     return indexes
 end #function find_indexes
@@ -85,7 +85,7 @@ end #function assemble_state_vector!
 
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
-    out::OrderedDict{String, Array{FT,1}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
+    out::OrderedDict{String, Vector{FT}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end

@@ -1,6 +1,3 @@
-include("constants.jl")
-include("types.jl")
-include("utils.jl")
 
     using Statistics , Interpolations, Dates
 using OrderedCollections, HDF5, JLD2
@@ -98,23 +95,29 @@ function take_time_average!(dataset::FrequencyCombDataset; δt::Period=Dates.Hou
 
     while t₁ < t_final
         indexes = findall(t->(t>=t₁ && t<=t₂), timestamps)
-        
+        t₁ = t₂
+        t₂ = t₂ + δt        
         # in the case where we get no idnexes, this averaging won't fail
-        length(indexes)<1 ? n=length(indexes) : break
+        if length(indexes)>1
+            n=length(indexes)
+        else
+            continue
+        end
+        
+        
 
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
         averaged_σ²[i] = 1/n * mean(dataset.σ²[indexes])
         num_averaged_measurements[i] = n
-        averaging_times[i] = t₁
-        machine_time[i] = dataset.time[indexes[1]]
+        averaging_times[i] = dataset.time[indexes[1]]
+        machine_time[i] = dataset.machine_time[indexes[1]]
         averaged_vcd[i] = mean(dataset.vcd[indexes])
         
         # update variables
         i += 1
-        t₁ = t₂
-        t₂ = t₂ + δt
+
     end # while loop
 
     dataset.intensity= averaged_measurements
@@ -230,6 +233,3 @@ Constructs an interpolation of the OCO cross-sections grid provided by JPL
     return sitp
     end
 
-data = read_DCS_data("../20160921.h5")
-data = take_time_average!(data)
-measurement = get_measurement(1, data, 6050, 6120)

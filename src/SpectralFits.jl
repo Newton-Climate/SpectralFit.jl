@@ -1,8 +1,11 @@
 module SpectralFits
-using RadiativeTransfer, RadiativeTransfer.Absorption
+
+# Import the Radiative Transfer Code
+using vSmartMOM, vSmartMOM.Absorption, vSmartMOM.Architectures
 include("constants.jl")
 include("types.jl")
 include("utils.jl")
+include("spectroscopy.jl")
 include("read_data.jl")
 include("forward_model.jl")
 include("inversion.jl")
@@ -11,14 +14,15 @@ using OrderedCollections
 ### export our structs and types
 # spectral-related types 
 export MolecularMetaData, Molecule, Spectra, OrderedDict, InversionResults
+export setup_molecules
 
 
 # Dataset-related types
-export Dataset, FrequencyComb
-export FrequencyCombDataset, TimeAveragedFrequencyCombDataset
+export AbstractDataset
+export FrequencyCombDataset
 
 # measurement-related types
-export Measurement, FrequencyCombMeasurement
+export AbstractMeasurement, FrequencyCombMeasurement
 
 
 ### export spectral-related functions
@@ -27,10 +31,10 @@ export construct_spectra, construct_spectra!
 export construct_spectra_by_layer, construct_spectra_by_layer!
 
 # Dataset Processing functions
-export read_DCS_data, take_time_average, get_measurement
+export read_DCS_data, take_time_average!, get_measurement
 
 # forward model functions
-export calc_transmission, apply_instrument, calc_polynomial_term
+export calc_transmission!, apply_instrument, calc_polynomial_term
 export generate_forward_model, generate_profile_model
 
 
