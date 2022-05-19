@@ -3,8 +3,6 @@ using Interpolations, Statistics
 using ForwardDiff
 using LinearAlgebra, Statistics 
 
-include("spectroscopy.jl")
-include("read_data.jl")
 
 #OCO_path = joinpath(dirname(pathof(SpectralFits)), "..", "CrossSections_data", "OCO_spectra.hdf")
 #global OCO_interp = OCO_spectra(OCO_path)
@@ -22,41 +20,27 @@ include("read_data.jl")
 - returns:
 transmission::Vector: the calculated tranmission
 """
-function calculate_transmission!(τ::Vector{<:Real}, x::AbstractDict, pathlength::Real, spectra::AbstractDict; p::Real=1000, T::Real=290)
+function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, pathlength::Real, spectra::AbstractDict; p::Real=1000, T::Real=290) where FT <: Real
 
-    #σ = similar(τ)
-    vcd = calc_vcd(p, T, pathlength, x["H2O"])
+    molecules = collect(keys(spectra))
+    τ = zeros(FT, length(spectra[molecules[1]].grid))
+    vcd = calc_vcd(p, T, pathlength)
+    
+    for molecule in molecules
+        σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
+    τ += vcd * x[molecule] * σ
+    end
+    return exp.(-τ)
+end
+
+function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, spectra::AbstractDict; p::Real=1000, T::Real=300) where FT <: Real
+
+    k = collect(keys(spectra))
+    τ = zeros(FT, size(spectra[k[1]].grid));
     
     for molecule in keys(spectra)
         σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
-    τ .+= @. vcd * x[molecule] * σ
-    end
-    return exp.(-τ)
-end
-
-function calculate_transmission(x::AbstractDict, spectra::AbstractDict; p::Real=1000, T::Real=300)
-
-    k = collect(keys(spectra))
-        FT = eltype(x[k[1]].cross_sections)
-    τ = zeros(FT, size(spectra[k[1]].cross_sections));
-    σ = similar(τ)
-    
-    for molecule in keys(spectra)
-        σ[:] = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
-    τ += @. x[molecule] * σ
-    end
-    return exp.(-τ)
-end
-
-function calculate_transmission!(τ::Vector{<:Real},
-                                 x::AbstractDict,
-                                 spectra::AbstractDict;
-                                 p::Real=1000, T::Real=300)
-    
-    σ = similar(τ)
-    for molecule in keys(spectra)
-        σ[:] = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p,T)
-    τ += @. x[molecule] * σ
+    τ += x[molecule] * σ
     end
     return exp.(-τ)
 end
@@ -199,11 +183,7 @@ f::Function: the forward model called as f(x::Vector)
         spectra_grid = spectra[x₀_fields[1]].grid
         len_spectra = length(spectra_grid)
         len_measurement = length(measurement.grid)
-        
-        transmission = zeros(FT, len_spectra)
-        intensity = zeros(FT, len_measurement)
-        polynomial_term = zeros(FT, len_measurement)
-        
+                
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
         
@@ -215,20 +195,19 @@ f::Function: the forward model called as f(x::Vector)
         
         # apply Beer's Law
         if haskey(inversion_setup, "fit_column") && inversion_setup["fit_column"] == true
-            transmission = calculate_transmission!(transmission, x, spectra, p=p, T=T)
+            transmission = calculate_transmission(x, spectra, p=p, T=T)
         else
-            transmission = calculate_transmission!(transmission, x, measurement.pathlength, spectra, p=p, T=T)
+            transmission = calculate_transmission(x, measurement.pathlength, spectra, p=p, T=T)
         end
 
         # down-sample to instrument grid
-        intensity[:] = apply_instrument(spectra_grid, transmission, measurement.grid)
+        intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
         intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
 
-
         #intensity .*= polynomial_term
-        return intensity
+        return intensity 
     end
     return f
 end
@@ -265,23 +244,3 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
     return f
 end
 
-xₐ = OrderedDict{String,Union{Float64, Vector{Float64}}}("H2O" => 0.01,
-    "CH4" => 2000e-9,
-                  "CO2" => 400e-6,
-                  "pressure" => 1000.0,
-                  "temperature" => 300.0,
-                  "shape_parameters" => [maximum(measurement.intensity); ones(inversion_setup["poly_degree"]-1)])
-
-# just testing the fit itself
-f = generate_forward_model(xₐ, measurement, spec, inversion_setup);
-@time out = f(xₐ)
-#@time out = f(xₐ)
-x = assemble_state_vector!(xₐ)
-#@time f(x)
-#@time f(x)
-#
-cfg10 = ForwardDiff.JacobianConfig(f,x, ForwardDiff.Chunk{30}())
-x = x
-println("chunk = 1")
-
-@time k = ForwardDiff.jacobian(f,x, cfg10)
