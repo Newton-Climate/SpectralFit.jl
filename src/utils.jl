@@ -38,8 +38,8 @@ function calc_vcd(p::Real, T::Real, δz::Float64)
 end #function calc_vcd
 
 """Calculate the half-pressure levels given a pressure profile"""
-function half_pressure_levels(p::Array{<:Real,1})
-    half_levels::Array{<:Real,1} = zeros(length(p)+1)
+function half_pressure_levels(p::Array{FT,1}) where FT <: Real
+    half_levels = zeros(FT, length(p)+1)
     p₀ = p[1]
     for i=2:length(p)
         half_levels[i] = (p[i] + p[i-1])/2
@@ -52,7 +52,6 @@ end
 
 """construct vcd profiles by layer, given pressure,  temperature, and humidity"""
 function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=nothing)
-    vcd = zeros(length(p))
     
     if vmr_H₂O == nothing
         vmr_H₂O = zeros(length(p))
@@ -66,7 +65,7 @@ function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=noth
 end
 
 """Convert a state vector{Dict} to an Array"""
-function assemble_state_vector!(x::AbstractDict{String, Union{FT, Vector{FT}}}) where FT<:Real
+function assemble_state_vector!(x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}) where FT<:Real
     out::Array{FT,1} = []
     for key in keys(x)
         out = append!(out, x[key])
