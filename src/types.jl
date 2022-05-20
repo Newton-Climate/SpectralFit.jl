@@ -36,8 +36,8 @@ Base.@kwdef mutable struct InversionResults{FT}
     S::Array{FT,2}
     grid::Array{FT,1}
     K::Array{FT,2}
-    Sₑ::AbstractArray{FT}
-    Sₐ::AbstractArray{FT}
+    Sₑ⁻¹::AbstractArray{FT}
+    Sₐ⁻¹::AbstractArray{FT}
 end
 
 

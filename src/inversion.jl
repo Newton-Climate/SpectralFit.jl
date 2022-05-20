@@ -119,29 +119,27 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     S = inv(kᵢ'*Sₑ⁻¹*kᵢ); # posterior error covarience
 
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
-    output = InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+    return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
                               x=x,
                               measurement=y, model=fᵢ, χ²=χ², S=S,
-                              grid=measurement.grid, K=kᵢ, Sₑ=Sₑ⁻¹, Sₐ=ones(length(measurement.grid)))
-
+                              grid=measurement.grid, K=kᵢ, Sₑ⁻¹=Sₑ⁻¹, Sₐ⁻¹=ones(length(measurement.grid))) 
     
-    return output
 end#function
 
 
 """fit over an atmospheric column with multiple layers"""
-function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::Array{<:AbstractDict,1}, inversion_setup::AbstractDict)
+function profile_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
     # define the observational prior error covariance
         if haskey(inversion_setup, "obs_covariance")
         println("Using user-defined covariance")
-        Sₑ⁻¹ = inversion_setup["obs_covarience"]
+        Sₒ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_indexes")
         println("masking out selected wave-numbers")
-        Sₑ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+        Sₒ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
     else
         println("default covariance")
-        Sₑ⁻¹ = make_obs_error(measurement)
+        Sₒ⁻¹ = make_obs_error(measurement)
     end
     
     
@@ -193,10 +191,14 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Abstr
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = Array{Float64}(undef, size(Kᵢ))
-#    inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    #    inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
 
     # Gain matrix
-    return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
+    return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+                              x=x,
+                              measurement=y, model=fᵢ, χ²=χ², S=S,
+                              grid=measurement.grid, K=Kᵢ, Sₑ⁻¹=Sₒ⁻¹, Sₐ⁻¹=Sₐ⁻¹)
 end#function    
 
 
