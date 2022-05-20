@@ -20,23 +20,23 @@ using LinearAlgebra, Statistics
 - returns:
 transmission::Vector: the calculated tranmission
 """
-function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, pathlength::Real, spectra::AbstractDict; p::Real=1000, T::Real=290) where FT <: Real
+function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290) where FT <: Real
 
-    molecules = collect(keys(spectra))
-    τ = zeros(FT, length(spectra[molecules[1]].grid))
+    #molecules = collect(keys(spectra))
+    τ = zeros(FT, grid_length)
     vcd = calc_vcd(p, T, pathlength)
     
-    for molecule in molecules
+    for molecule in keys(spectra)
         σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
     τ += vcd * x[molecule] * σ
     end
     return exp.(-τ)
 end
 
-function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, spectra::AbstractDict; p::Real=1000, T::Real=300) where FT <: Real
+function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=300) where FT <: Real
 
-    k = collect(keys(spectra))
-    τ = zeros(FT, size(spectra[k[1]].grid));
+    #k = collect(keys(spectra))
+    τ = zeros(FT, grid_length)
     
     for molecule in keys(spectra)
         σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
@@ -47,15 +47,19 @@ end
 
 
 """calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::AbstractDict, spectra::Array{<:AbstractDict,1}, vcd::Array{<:Real,1})
-   
-    n_levels = length(vcd)
-    k = collect(keys(spectra[1]))
-        FT = eltype(x[k[1]].cross_sections)
-    τ = zeros(FT, size(spectra[1][k[1]].grid))
+function calculate_transmission(xₐ::AbstractDict{String,Vector{FT}}, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false) where FT <: Real
+    
+
+
+    n_levels = length(p)
+        vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
+    molecules = collect(keys(spectra))
+    τ = zeros(FT, length(spectra[molecules[1]].grid))
+    
     for i = 1:n_levels
-        for species in keys(spectra[1])
-            τ += vcd[i]*xₐ[species][i]*spectra[i][species].cross_sections
+        for molecule in molecules
+            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p[i], T[i])
+            τ += vcd[i]*xₐ[molecule][i]*σ
         end
     end
     return exp.(-τ)
@@ -168,19 +172,15 @@ f::Function: the forward model called as f(x::Vector)
     
 
     # Save the labelled fields in the state vector
-    x₀_fields = collect(keys(x₀))
+    x_fields = collect(keys(x₀))
     
     function f(x)
         # convert the state vector to a dict with labelled fields
         if typeof(x) <: AbstractArray
-            FT = eltype(x)
             x = assemble_state_vector!(x, x₀_fields, inversion_setup)
-        else
-            FT = eltype(x[x₀_fields[1]])
         end
-
-        # the output vector
-        spectra_grid = spectra[x₀_fields[1]].grid
+        
+        spectra_grid = spectra[x_fields[1]].grid
         len_spectra = length(spectra_grid)
         len_measurement = length(measurement.grid)
                 
@@ -195,9 +195,9 @@ f::Function: the forward model called as f(x::Vector)
         
         # apply Beer's Law
         if haskey(inversion_setup, "fit_column") && inversion_setup["fit_column"] == true
-            transmission = calculate_transmission(x, spectra, p=p, T=T)
+            transmission = calculate_transmission(x, spectra, len_spectra, p=p, T=T)
         else
-            transmission = calculate_transmission(x, measurement.pathlength, spectra, p=p, T=T)
+            transmission = calculate_transmission(x, measurement.pathlength, spectra, len_spectra, p=p, T=T)
         end
 
         # down-sample to instrument grid
@@ -214,32 +214,30 @@ end
 
 
 """Generate a foreward model that calculates the transmission through multiple layers of the atmosphere"""
-function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasurement, spectra::Array{OrderedDict,1}, inversion_setup::AbstractDict)
+function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     x_fields = collect(keys(xₐ))
     num_levels = length(xₐ[x_fields[1]])
     
     
-    function f(x::AbstractArray)
-
-        FT = eltype(x)
-        intensity = zeros(FT, length(measurement.grid))
+    function f(x)
 
         if typeof(x) <: Array
             x = assemble_state_vector!(x, x_fields, num_levels, inversion_setup)
         end
-        if inversion_setup["fit_pressure"]
-            p, T = x["pressure"], x["temperature"]
-                    spectra = construct_spectra_by_layer!(spectra, p=p, T=T)
-        end
-        
-        transmission = calculate_transmission(x, spectra, measurement.vcd)
-        transmission = apply_instrument(collect(spectra[1][x_fields[1]].grid), transmission, measurement.grid)
 
-        # calculate lgendre polynomial coefficients and fit baseline 
-        shape_parameters = x["shape_parameters"]
-        polynomial_term = calc_polynomial_term(inversion_setup["poly_degree"], shape_parameters, length(transmission))'
-        intensity[:] = transmission .* polynomial_term
-        return intensity
+                spectra_grid = spectra[x_fields[1]].grid
+        len_spectra = length(spectra_grid)
+        len_measurement = length(measurement.grid)
+                
+        p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
+        T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
+        
+        transmission = calculate_transmission(x, spectra, p, T)
+        intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
+
+        # calculate lgendre polynomial coefficients and fit baseline
+        intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        return intensity 
     end
     return f
 end
