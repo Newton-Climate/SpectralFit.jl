@@ -44,48 +44,7 @@ function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
 end
 
 
-function nonlinear_inversion(x₀::Array{<:Real,1}, measurement::Measurement, spectra::Spectra, inversion_setup::AbstractDict)
-    f = generate_forward_model(measurement, spectra, inversion_setup);
-    Sₑ = make_obs_error(measurement);
-    y = measurement.intensity;
-    kᵢ = zeros(length(y), length(x₀));
-    xᵢ = x₀;
-    tolerence = 1.0e-4;
-    δᵢ = 10;
-    i = 1
-    fᵢ = f(xᵢ);
 
-
-    while i<10 && δᵢ>tolerence
-        result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), x₀);
-        ForwardDiff.jacobian!(result, f, xᵢ);
-        f_old = fᵢ
-
-        fᵢ, kᵢ = result.value, result.derivs[1]
-
-
-        x = xᵢ+inv(kᵢ'*Sₑ*kᵢ)*kᵢ'*Sₑ*(y-fᵢ);
-        #x = xᵢ+inv(kᵢ'*kᵢ)*kᵢ'*(y-fᵢ);
-
-
-        xᵢ = x;
-        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
-        
-        if i==1 #prevent premature ending of while loop
-            δᵢ = 1
-        end
-        if inversion_setup["verbose_mode"]
-            println("δᵢ for iteration ",i," is ",δᵢ)
-        end
-        
-        i = i+1
-    end #while loop
-
-    # Calculate χ²
-    χ² = (y-fᵢ)'*Sₑ*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = inv(kᵢ'*Sₑ*kᵢ)
-    return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, I)
-end#function
 
 function failed_inversion(xₐ::OrderedDict, measurement::Measurement)
 
@@ -235,16 +194,6 @@ function nonlinear_inversion(f::Function, x₀::AbstractDict, measurement::Measu
     return InversionResults(measurement.time, measurement.machine_time, xᵢ, y, fᵢ, χ², S, measurement.grid, Kᵢ, Sₒ⁻¹, Sₐ⁻¹)
 end#function    
 
-function fit_spectra(measurement_num::Integer, xₐ::Array{<:Real,1}, dataset::Dataset, ν_range::Tuple)
-    measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[2])
-    spectra = construct_spectra("../H2O_S.data", "../CH4_S.data", "../CO2_S.data", "../HDO_S.data", ν_min=ν_range[1]-3, ν_max=ν_range[2]+3, p=measurement.pressure, T=measurement.temperature, use_TCCON=inversion_setup["use_TCCON"])
-    results = try
-        nonlinear_inversion(xₐ, measurement, spectra, inversion_setup)
-    catch
-        failed_inversion(xₐ, measurement)
-    end    
-    return results
-end
 
 
 function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Dataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
@@ -278,29 +227,6 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Data
     return results
 end
 
-
-
-function run_inversion(xₐ::Array{<:Real,1}, dataset::Dataset, inversion_setup::Dict{String,Real})
-    num_measurements = length(dataset.pressure) # number of total measurements
-    modelled = Array{InversionResults}(undef, num_measurements)
-    
-    ν_CH₄ = (6055, 6120);
-#ν_CO2 = (6206, 6280);
-ν_CO₂ = (6180, 6250);
-    ν_HDO = (6310,6380);
-
-    results = Array{InversionResults}(undef, (3,num_measurements));
-    println("Beginning inversion")
-    
-        Threads.@threads for i=1:num_measurements
-  
-        println(i)
-        results[1,i] = fit_spectra(i, xₐ, dataset, ν_CO₂);        
-        results[2,i] = fit_spectra(i, xₐ, dataset, ν_CH₄);
-        results[3,i] = fit_spectra(i, xₐ, dataset, ν_HDO);
-    end
-    return results
-end
 
 
 function run_inversion(xₐ::AbstractDict, dataset::Dataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::AbstractDict)
