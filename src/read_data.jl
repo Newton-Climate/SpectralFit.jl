@@ -179,7 +179,7 @@ function get_measurement(measurement_num::Integer, dataset::AbstractDataset, ν_
     time = dataset.time[i]
 
     # find indexes
-    indexes = find_indexes(ν_min, ν_max, dataset.grid)
+    indexes = findall(x -> ν_min<x<ν_max, dataset.grid)
     grid = dataset.grid[indexes]
     intensity = dataset.intensity[i,indexes]
     vcd = make_vcd_profile(p, T)
