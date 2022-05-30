@@ -146,6 +146,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     y = measurement.intensity;
     Kᵢ = zeros(length(y), length(x₀));
     xₐ = assemble_state_vector!(x₀);
+    num_levels = length(measurement.pressure)
     xᵢ = xₐ
     Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
     tolerence = 1.0e-4;
@@ -190,9 +191,8 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = Array{Float64}(undef, size(Kᵢ))
-    #    inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
-    x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
 
     # Gain matrix
     return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
