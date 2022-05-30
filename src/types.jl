@@ -29,7 +29,7 @@ end
 Base.@kwdef mutable struct InversionResults{FT}
     timestamp::DateTime
     machine_time::FT
-    x::AbstractDict{String,Union{FT, Vector{FT}}}
+    x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
     measurement::Array{FT,1}
     model::Array{FT,1}
     χ²::FT
