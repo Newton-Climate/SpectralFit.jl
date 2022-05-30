@@ -39,7 +39,7 @@ export generate_forward_model, generate_profile_model
 
 
 ### fitting routines
-export nonlinear_inversion, fit_spectra, run_inversion
+export nonlinear_inversion, profile_inversion, fit_spectra, run_inversion
 export process_all_files
 
 # some useful funcs fom utils.jl

@@ -232,7 +232,7 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
         
-        transmission = calculate_transmission(x, spectra, p, T)
+        transmission = calculate_transmission(x, spectra, p, T, input_is_column=inversion_setup["fit_column"])
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
