@@ -1,9 +1,4 @@
 
-using Interpolations, Statistics
-using ForwardDiff
-using LinearAlgebra, Statistics 
-
-
 #OCO_path = joinpath(dirname(pathof(SpectralFits)), "..", "CrossSections_data", "OCO_spectra.hdf")
 #global OCO_interp = OCO_spectra(OCO_path)
 

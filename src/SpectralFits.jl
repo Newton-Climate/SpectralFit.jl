@@ -1,15 +1,27 @@
 module SpectralFits
 
+## import packages
+# for math calculations
+using LinearAlgebra, ForwardDiff, DiffResults
+using Statistics, Interpolations
+
+# parallel processing
+using Distributed
+
+# File IO
+using Dates, OrderedCollections, HDF5, JLD2, ProgressMeter
+
 # Import the Radiative Transfer Code
 using vSmartMOM, vSmartMOM.Absorption, vSmartMOM.Architectures
-include("constants.jl")
-include("types.jl")
-include("utils.jl")
-include("spectroscopy.jl")
-include("read_data.jl")
-include("forward_model.jl")
-include("inversion.jl")
-using OrderedCollections
+
+## create name-space
+include("constants.jl") # physical constants
+include("types.jl") # custom datatypes and structs 
+include("utils.jl") # helper-functions 
+include("spectroscopy.jl") # for calculating absorption cross-sections and MolecularMetaData type 
+include("read_data.jl") # file IO and creating AbstractDataset and AbstractMeasurements
+include("forward_model.jl") # functions for creating a forward model
+include("inversion.jl") # functions for retrieving and fitting 
 
 ### export our structs and types
 # spectral-related types 
@@ -18,8 +30,7 @@ export setup_molecules
 
 
 # Dataset-related types
-export AbstractDataset
-export FrequencyCombDataset
+export AbstractDataset, FrequencyCombDataset
 
 # measurement-related types
 export AbstractMeasurement, FrequencyCombMeasurement
@@ -43,8 +54,11 @@ export nonlinear_inversion, profile_inversion, fit_spectra, run_inversion
 export process_all_files
 
 # some useful funcs fom utils.jl
-export assemble_state_vector!, OCO_spectra
+export assemble_state_vector!
 export make_vcd_profile, calc_gain_matrix
-export save_results
+
+# certain packages visible to the user
+export Dates, OrderedCollections, Statistics, JLD2
+export vSmartMOM
 
 end # module

@@ -1,8 +1,3 @@
-using LinearAlgebra, Distributed, DistributedArrays, ForwardDiff, DiffResults
-using ProgressMeter, JLD2
-
-
-
 
 function make_obs_error(measurement::AbstractMeasurement;
                         σ²::Union{Nothing, Float64}=nothing,
@@ -144,15 +139,15 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     
     
     y = measurement.intensity;
-    Kᵢ = zeros(length(y), length(x₀));
     xₐ = assemble_state_vector!(x₀);
     num_levels = length(measurement.pressure)
-    xᵢ = xₐ
+    xᵢ = copy(xₐ)
     Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
     tolerence = 1.0e-4;
     γ = 1.0;
     δᵢ = 15;
     i = 1
+    Kᵢ = zeros((length(measurement.grid), length(xᵢ)))
     fᵢ = f(xᵢ)
     
 
@@ -165,16 +160,15 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         f_old = fᵢ # reassign model output 
         fᵢ, Kᵢ = result.value, result.derivs[1]
 
-        # Gauss-Newton Algorithm
+        # Baysian Maximum Likelihood Estimation 
         lhs = (Sₐ⁻¹ + Kᵢ'*Sₒ⁻¹*Kᵢ + γ*Sₐ⁻¹)
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         Δx = lhs\rhs
 
         x = xᵢ + Δx; # reassign state vector for next iteration
         xᵢ = x
-        println("H2O" , x[[1,10,20]])
-        println("CO2 ", x[[21,30,40]])
-        println("CH4 ", x[[41,50,59]])
+
+        println("CH4 ", 1e9*x[12:22])
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
