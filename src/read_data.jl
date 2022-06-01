@@ -1,143 +1,3 @@
-using RadiativeTransfer, RadiativeTransfer.Absorption
-using Statistics , Interpolations, Dates
-using OrderedCollections, HDF5, JLD2
-
-function load_interp_model(filepath::String)
-    @load filepath itp_model
-    return itp_model
-end
-
-
-"""constructor for MolecularMetaData
-Stores parameters for the HiTran parameters
-Construct one object per molecule being analyzed"""
-function get_molecule_info(molecule::String, filename::String, molecule_num::Int, isotope_num::Int, ν_grid::AbstractRange{<:Real}; architecture=CPU())
-
-    hitran_table = read_hitran(filename, mol=molecule_num, iso=isotope_num, ν_min=ν_grid[1], ν_max=ν_grid[end])
-    model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
-        return MolecularMetaData(molecule, filename, molecule_num, isotope_num, ν_grid, hitran_table, model)
-end
-
-function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
-    model = load_interpolation_model(filepath)
-    #hitran_table = read_hitran(filepath, mol=model.mol, iso=model.iso, ν_min=model.ν_grid[1], ν_max=model.ν_grid[end])
-        return MolecularMetaData(molecule, filepath, model.mol, model.iso, model.ν_grid, hitran_table, itp_model)
-    end
-
-
-"""
-- Constructor for Molecule type
-- calculates the cross-sections of a HiTran molecule and stores in Molecule type
-"""
-function calculate_cross_sections( filename::String, molec_num::Integer, iso_num::Integer; ν_min::Real=6000, ν_max::Real=6400, δν=0.01, p::Real=1001, T::Real=290, architecture=CPU())
-
-    # retrieve the HiTran parameters 
-    hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
-    model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
-    grid = ν_min:δν:ν_max;
-    cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T)
-    
-    # store results in the Molecule type
-    molecule = Molecule(cross_sections, grid, p, T, hitran_table, model)
-    return molecule
-end #function calculate_cross_sections
-
-"""
-- Calculates the cross-sections of all input molecules inputted as type MolecularMetaData
-- returns Molecules as a Dict
-"""
-function construct_spectra(molecules::Array{MolecularMetaData,1}; ν_grid::AbstractRange{<:Real}=6000:0.1:6400, p::Real=1001, T::Real=295)
-    
-    cross_sections = map(x -> absorption_cross_section(x.model, ν_grid, p, T), molecules) # store results in a struct
-    out = OrderedDict(molecules[i].molecule => Molecule(cross_sections[i], collect(ν_grid), p, T, molecules[i].hitran_table, molecules[i].model) for i=1:length(molecules))
-    return out
-end #function calculate_cross_sections
-
-
-
-
-"""
-- recalculates the cross-sections given the Molecule type
-- used in the forward model for institue cross-sections calculation 
-"""
-function calculate_cross_sections!(molecule::Molecule; T::Real=290, p::Real=1001)
-   
-    # recalculate cross-sections
-    molecule.cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
-    return molecule
-end #function calculate_cross_sections!
-
-
-"""
-- Constructor for Spectra type
-- Calculates the cross-sections of H₂O, CH₄, CO₂, and HDO
-"""
-function construct_spectra(H₂O_datafile::String, CH₄_datafile::String, CO₂_datafile::String, HDO_datafile::String; ν_min::Real=6000, ν_max::Real=6300, δν::Real=0.01, p::Real=1001, T::Real=290, use_TCCON=false)
-
-    
-    H₂O = calculate_cross_sections(H₂O_datafile, 1, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
-    if use_TCCON
-        HDO = calculate_cross_sections(HDO_datafile, 49, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
-        elseif use_TCCON == false
-        HDO = calculate_cross_sections(HDO_datafile, 1, 4, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
-    end # if-statement
-    
-    CH₄ = calculate_cross_sections(CH₄_datafile, 6, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)        
-    CO₂ = calculate_cross_sections(CO₂_datafile, 2, 1, ν_min=ν_min, ν_max=ν_max, δν=δν, p=p, T=T)
-    spectra = Spectra(H₂O, CH₄, CO₂, HDO)
-    return spectra
-end #function construct_spectra
-    
-
-function construct_spectra!(spectra::Spectra; p::Real=1001, T::Real=290)
-    """
-recalcualtes the cross-sections of Molecules type stored in the Spectra type
-"""
-    
-    H₂O = calculate_cross_sections!(spectra.H₂O, p=p, T=T);
-    CO₂ = calculate_cross_sections!(spectra.CO₂, p=p, T=T)
-    CH₄ = calculate_cross_sections!(spectra.CH₄, p=p, T=T)
-    HDO = calculate_cross_sections!(spectra.HDO, p=p, T=T)
-
-    
-    spectra.H₂O, spectra.CO₂, spectra.CH₄, spectra.HDO = H₂O, CO₂, CH₄, HDO;
-    return spectra
-end
-
-function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
-    for (species, molecule) in spectra
-        spectra[species].cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
-    end    
-    return spectra
-end
-
-
-### define some default values for p and T
-p_default = collect(range(450,800, length=20))
-T_default = collect(range(240, 290, length=20))
-
-"""calculate corss-sections for vertical profiles, where pressure and temperature are Arrays"""
-function construct_spectra_by_layer(molecules::Array{MolecularMetaData,1}; p::Array{<:Real,1}=p_default, T::Array{<:Real,1}=T_default, ν_min=6000, ν_max=6400, δν=0.01)
-    n_levels = length(p) 
-    spectra = Array{OrderedDict}(undef, n_levels)
-    for i=1:length(p)
-        spectra[i] = construct_spectra(molecules, p=p[i], T=T[i], ν_grid=ν_min:δν:ν_max)
-    end
-    return spectra
-end
-
-
-function construct_spectra_by_layer!(spectra::Array{OrderedDict,1}; p::Array{<:Real,1}=p_default, T::Array{<:Real,1}=T_default)
-    num_levels = length(p)
-    for i=1:num_levels
-        spectra[i] = construct_spectra!(spectra[i], p=p[i], T=T[i])
-    end
-    return spectra
-end
-    
-
-
-
 
 """Constructor of the FrequencyCombDataset type """
 function read_DCS_data(filename::String)
@@ -167,10 +27,10 @@ end
 
     pressure = 0.9938*HDF5.read(file, datafields[1]) # pressure in mbar
     temperature = HDF5.read(file, datafields[2]) + 273.15*ones(length(pressure)) # temperature in K
-    pathlength = 195017 # round trip path length in meters DCSA
+    pathlength = 195017.0 # round trip path length in meters DCSA
     #pathlength = 196367 # round trip path length in m for DCSB
 
-    time = HDF5.read(file, datafields[3])
+    machine_time = HDF5.read(file, datafields[3])
     grid = HDF5.read(file, datafields[4])
     grid = grid ./ c # convert from hz to wavenumber 
     intensity = HDF5.read(file, datafields[5])
@@ -178,63 +38,92 @@ end
 
     # calculate noise
     σ² = calc_DCS_noise(grid, intensity)
+    averaging_window = Second(1)
+    n = length(pressure)
+    num_averaged_measurements = ones(Int64, n)
+    vcd = calc_vcd.(pressure, temperature, pathlength)
+    time = unix2datetime.(machine_time)
 
+
+    dataset = FrequencyCombDataset(filename=filename, intensity=intensity, grid=grid,
+                                              temperature=temperature, pressure=pressure,
+                                time=time, pathlength=pathlength,                                              num_averaged_measurements=num_averaged_measurements, averaging_window=averaging_window, machine_time=machine_time, σ²=σ², vcd=vcd)
+    
     # save to a struct
-    dataset = FrequencyCombDataset(filename, intensity, grid, temperature, pressure, time, pathlength, time, σ²)
+    #dataset = map(i->FrequencyCombMeasurement(intensity=intensity[i,:], grid=grid,
+#                                              temperature=temperature[i], pressure=pressure[i],
+#                                              time=time[i], #pathlength=pathlength,                                              #num_averaged_measurements=num_averaged_measurements, averaging_window=averaging_window, #machine_time=machine_time[i], σ²=σ²[i], vcd=vcd[i]), 1:n)
     return dataset
 end # function read_DCS_data
 
 
-function take_time_average(dataset::FrequencyCombDataset; δt::Period=Dates.Hour(1))
+
+
+
+function take_time_average!(dataset::FrequencyCombDataset; δt::Period=Dates.Hour(1))
     """
 -Takes time-average of the FrequencyCombDataset over a time δt::TimeDelta
 - returns a TimeAveragedFrequencyCombDataset 
 """
-    
-    timestamps = unix2datetime.(dataset.time)
+
+    FT = eltype(dataset.intensity)
+    IT = eltype(dataset.num_averaged_measurements)
+    timestamps = dataset.time
     t₁ = floor(timestamps[1], δt)
     t₂ = t₁ + δt
     t_final = timestamps[end]
     num_measurements = ceil((t_final - t₁), δt)
     num_measurements = Int(num_measurements/δt)
-    averaged_measurements = Array{Float64}(undef,(num_measurements, size(dataset.intensity)[2]))
-    averaged_temperature = Array{Float64}(undef, num_measurements)
-    averaged_pressure = Array{Float64}(undef, num_measurements)
-    averaging_times = Array{Tuple{DateTime,DateTime}}(undef, num_measurements)
-    averaged_σ² = Array{Float64,1}(undef, num_measurements)
-    num_averaged_measurements = Array{Int64}(undef, num_measurements)
-    machine_time = Array{Float64}(undef,num_measurements)
+
+    # allocate memory 
+    averaged_measurements = Array{FT}(undef,(num_measurements, size(dataset.intensity)[2]))
+    averaged_temperature = Array{FT}(undef, num_measurements)
+    averaged_pressure = Array{FT}(undef, num_measurements)
+    averaging_times = Array{DateTime}(undef, num_measurements)
+    averaged_σ² = Array{FT,1}(undef, num_measurements)
+    num_averaged_measurements = Array{IT}(undef, num_measurements)
+    machine_time = Array{FT}(undef,num_measurements)
+    averaged_vcd = similar(averaged_pressure)
     i= 1;
 
     while t₁ < t_final
         indexes = findall(t->(t>=t₁ && t<=t₂), timestamps)
-        
+        t₁ = t₂
+        t₂ = t₂ + δt        
         # in the case where we get no idnexes, this averaging won't fail
-        if length(indexes) < 1; break; end;
+        if length(indexes)>1
+            n=length(indexes)
+        else
+            continue
+        end
+        
+        
 
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
-        averaged_σ²[i] = 1/length(indexes) * mean(dataset.σ²[indexes])
-        num_averaged_measurements[i] = length(indexes) # save number of averaged measurements per window
-        averaging_times[i] = (t₁, t₂)
-        machine_time[i] = dataset.time[indexes[1]]
+        averaged_σ²[i] = 1/n * mean(dataset.σ²[indexes])
+        num_averaged_measurements[i] = n
+        averaging_times[i] = dataset.time[indexes[1]]
+        machine_time[i] = dataset.machine_time[indexes[1]]
+        averaged_vcd[i] = mean(dataset.vcd[indexes])
         
-
         # update variables
         i += 1
-        t₁ = t₂
-        t₂ = t₂ + δt
+
     end # while loop
 
-    data_out = TimeAveragedFrequencyCombDataset(dataset.filename, averaged_measurements, dataset.grid, averaged_temperature, averaged_pressure, averaging_times, dataset.pathlength, num_averaged_measurements, δt, machine_time, averaged_σ²)
-    return data_out
+    dataset.intensity= averaged_measurements
+                                    dataset.temperature=averaged_temperature
+    dataset.pressure=averaged_pressure
+    dataset.time=averaging_times
+    dataset.num_averaged_measurements=num_averaged_measurements
+    dataset.averaging_window=δt
+    dataset.machine_time=machine_time
+    dataset.σ²=averaged_σ²
+    dataset.vcd=averaged_vcd
+    return dataset
 end
-
-    
-
-
-
 
 
 
@@ -243,53 +132,60 @@ end
 Subsets the FrequencyCombDataset into indivitual measurements 
 Constructor of Measurement type
 """
-function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real)
+function get_measurement(measurement_num::Integer, dataset::AbstractDataset, ν_min::Real, ν_max::Real)
 
     i = measurement_num
     p = dataset.pressure[i]
     T = dataset.temperature[i]
     δz = dataset.pathlength
     time = dataset.time[i]
-    σ² = dataset.σ²[i]
 
     # find indexes
     indexes = find_indexes(ν_min, ν_max, dataset.grid)
     grid = dataset.grid[indexes]
     intensity = dataset.intensity[i,indexes]
-    vcd = calc_vcd(p, T, δz)
 
     # save to struct FrequencyCombMeasurement
-    if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i], σ)
-        elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], σ²)
-    end # if statement
+    measurement = FrequencyCombMeasurement(intensity=intensity, grid=grid,
+                                           temperature=T, pressure=p, time=time,
+                                           pathlength=δz, vcd=dataset.vcd[i], num_averaged_measurements=dataset.num_averaged_measurements[i],
+                                           averaging_window=dataset.averaging_window, machine_time=dataset.machine_time[i], σ²=dataset.σ²[i])
     
     return measurement
 end # function get_measurement
 
+function data2measurements(dataset::AbstractDataset, ν_min=nothing, ν_max=nothing)
+    min = ν_min==nothing ? dataset.grid[1] : ν_min
+    max = ν_max==nothing ? dataset.grid[end] : ν_max
+    
+    n = length(dataset.pressure)
+    out = map(i->get_measurement(i, dataset, min, max), 1:n)
+    return out
+end
 
-function get_measurement(measurement_num::Integer, dataset::Dataset, ν_min::Real, ν_max::Real, p::Array{Float64,1}, T::Array{Float64,1})
+    
+
+function get_measurement(measurement_num::Integer, dataset::AbstractDataset, ν_min::Real, ν_max::Real, p::Array{Float64,1}, T::Array{Float64,1})
 
     i = measurement_num
     δz = dataset.pathlength
     time = dataset.time[i]
 
     # find indexes
-    indexes = find_indexes(ν_min, ν_max, dataset.grid)
+    indexes = findall(x -> ν_min<x<ν_max, dataset.grid)
     grid = dataset.grid[indexes]
     intensity = dataset.intensity[i,indexes]
     vcd = make_vcd_profile(p, T)
 
     # save to struct FrequencyCombMeasurement
-    if typeof(dataset) == FrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, 1, 0, dataset.timestamp[i], dataset.σ[i])
-        elseif typeof(dataset) == TimeAveragedFrequencyCombDataset
-        measurement = FrequencyCombMeasurement(intensity, grid, T, p, time, δz, vcd, dataset.num_averaged_measurements[i], dataset.averaging_window, dataset.timestamp[i], dataset.σ[i])
-    end # if statement
-    
+        measurement = FrequencyCombMeasurement(intensity=intensity, grid=grid,
+                                           temperature=T, pressure=p, time=time,
+                                           pathlength=δz, vcd=vcd, num_averaged_measurements=dataset.num_averaged_measurements[i],
+                                           averaging_window=dataset.averaging_window, machine_time=dataset.machine_time[i], σ²=dataset.σ²[i])
     return measurement
 end # function get_measurement
+
+
 
 
     
@@ -329,5 +225,4 @@ Constructs an interpolation of the OCO cross-sections grid provided by JPL
     sitp = scale(itp, ν, T, p);
     return sitp
     end
-
 

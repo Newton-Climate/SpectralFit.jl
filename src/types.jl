@@ -1,100 +1,79 @@
-using Dates
-using ForwardDiff:Dual
 
-    """stores the metadata of hitran line-lists and coefficients in type HitranTable"""
-struct MolecularMetaData
+"""
+stores the metadata of hitran line-lists and coefficients in type HitranTable
+
+"""
+Base.@kwdef struct MolecularMetaData
     molecule::String
     filename::String
-    molecule_num::Integer
-    isotope_num::Integer
-    ν_grid::Union{AbstractRange, Array{Float64,1}}
-    hitran_table
-    model
+    molecule_num::Int
+    isotope_num::Int
+    grid::Union{AbstractRange, AbstractArray}
+    model::AbstractCrossSectionModel
 end
 
 
 """type to store cross-sections, pressure, temperature, and line-list parameters"""
-mutable struct Molecule{FT}
-   
-    cross_sections::AbstractArray
-    grid::Union{AbstractRange{FT}, Array{FT,1}}
+Base.@kwdef mutable struct Molecule{FT}
+    cross_sections::Array{<:Real,1}
+    grid::Union{AbstractRange, Array{FT,1}}
     p::FT
     T::FT
-    hitran_table::HitranTable{FT}
-    model::HitranModel
+    model::AbstractCrossSectionModel
 end
 
-    """Type to store molecules"""
-mutable struct Spectra
-    H₂O::Molecule
-    CH₄::Molecule
-    CO₂::Molecule
-    HDO::Molecule
-end
 
 
     """-type for storing results from spectral fit
 - used later for saving into NetCDF files"""
-mutable struct InversionResults
-    timestamp
-    machine_time
-    x
-    measurement
-    model
-    χ²
-    S
-    grid
-    K
-    Sₑ
-    Sₐ
+Base.@kwdef mutable struct InversionResults{FT}
+    timestamp::DateTime
+    machine_time::FT
+    x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
+    measurement::Array{FT,1}
+    model::Array{FT,1}
+    χ²::FT
+    S::Array{FT,2}
+    grid::Array{FT,1}
+    K::Array{FT,2}
+    Sₑ⁻¹::AbstractArray{FT}
+    Sₐ⁻¹::AbstractArray{FT}
 end
 
 
-abstract type Dataset end
+abstract type AbstractDataset end
 
-abstract type FrequencyComb <: Dataset end
 
-mutable struct FrequencyCombDataset <: Dataset
+Base.@kwdef mutable struct FrequencyCombDataset{FT} <: AbstractDataset
     filename::String
-    intensity::Array{Float64,2}
-    grid::Vector{Float64}
-    temperature::Vector{Float64}
-    pressure::Vector{Float64}
-    time::Vector{Any}
-    pathlength::Float64
-    timestamp::Array{Float64,1}
-    σ²::Vector{Float64}
-end 
-
-struct TimeAveragedFrequencyCombDataset <: FrequencyComb
-    filename::String
-    intensity::Array{Float64,2}
-    grid::Vector{Float64}
-    temperature::Vector{Float64}
-    pressure::Vector{Float64}
-    time::Vector{Tuple{DateTime,DateTime}}
-    pathlength::Float64
-    num_averaged_measurements::Vector{Int64}
+    intensity::Array{FT,2}
+    grid::Vector{FT}
+    temperature::Vector{FT}
+    pressure::Vector{FT}
+    time::Vector{DateTime}
+    pathlength::FT
+    num_averaged_measurements::Vector{Int}
     averaging_window::Dates.Period
-    timestamp::Array{Float64,1}
-    σ²::Vector{Float64}
+    machine_time::Vector{FT}
+    σ²::Vector{FT}
+    vcd::Vector{FT}
 end
 
 
-abstract type Measurement end
+abstract type AbstractMeasurement end
 
-mutable struct FrequencyCombMeasurement <: Measurement
-    intensity::Array{Float64,1}
-    grid::Vector{Float64}
-    temperature::Union{Float64, Array{Float64,1}}
-    pressure::Union{Float64, Array{Float64,1}}
-    time::Any
-    pathlength::Float64
-    vcd::Union{Float64, Array{Float64,1}}
-    num_averaged_measurements::Int64
+Base.@kwdef mutable struct FrequencyCombMeasurement{FT} <: AbstractMeasurement
+    intensity::Vector{FT}
+    grid::Vector{FT}
+    temperature::Union{FT, Vector{FT}}
+    pressure::Union{FT, Vector{FT}}
+    time::Dates.DateTime
+    pathlength::FT
+    vcd::Union{FT, Array{FT,1}}
+    num_averaged_measurements::Int
     averaging_window::Any
-    machine_time::Float64
-    σ²::Float64
+    machine_time::FT
+    σ²::FT
 end
     
 Base.@kwdef struct SimpleInterpolationModel{FT} <: AbstractCrossSectionModel
@@ -102,6 +81,6 @@ Base.@kwdef struct SimpleInterpolationModel{FT} <: AbstractCrossSectionModel
     mol::Int
     iso::Int
     ν_grid::Union{Array{FT,1}, UnitRange{FT}}
-    p_grid::Union{Array{FT,1}, UnitRange{FT}}
-    T_grid::Union{Array{FT,1}, UnitRange{FT}}
+    p_grid::Union{Array{FT,1}, AbstractRange{FT}}
+    T_grid::Union{Array{FT,1}, AbstractRange{FT}}
 end
