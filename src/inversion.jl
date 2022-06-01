@@ -90,8 +90,6 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
 
         # Gauss-Newton Algorithm
          xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ);
-         @show xᵢ[1:5]
-         
 
         #evaluate relative difference between this and previous iteration 
          #δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
@@ -168,7 +166,6 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         x = xᵢ + Δx; # reassign state vector for next iteration
         xᵢ = x
 
-        println("CH4 ", 1e9*x[12:22])
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
