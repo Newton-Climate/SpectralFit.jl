@@ -9,7 +9,7 @@ end #function find_indexes
 
 """Calculate the vertical column density given pressure and temperature"""
 function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
-    #δp = δp*100 # convert from mbar to pascals 
+    δp = δp*100.0 # convert from mbar to pascals 
     dry_mass = 28.9647e-3  /Nₐ  # in kg/molec, weighted average for N2 and O2
     wet_mass = 18.01528e-3 /Nₐ  # just H2O
     ratio = dry_mass/wet_mass
@@ -38,7 +38,9 @@ end #function calc_vcd
 """Calculate the half-pressure levels given a pressure profile"""
 function half_pressure_levels(p::Array{FT,1}) where FT <: Real
     half_levels = zeros(FT, length(p)+1)
+
     p₀ = p[1]
+       
     for i=2:length(p)
         half_levels[i] = (p[i] + p[i-1])/2
     end
@@ -51,11 +53,11 @@ function half_pressure_levels(p::Array{FT,1}) where FT <: Real
     # Is the ground-level at the top or bottom of the vector?
     # sea-level is at the bottom of the vector
     if p₀ <= p[end]
-        return half_levels
+        return half_levels[2:end] - half_levels[1:end-1]
         
         # sea-level is the top of the vector 
     elseif p₀ > p[end]
-        return -half_levels
+        return -(half_levels[2:end] - half_levels[1:end-1])
     end
 end
 
@@ -66,9 +68,7 @@ function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=noth
         vmr_H₂O = zeros(length(p))
     end
     
-    #half_levels = half_pressure_levels(p)
-    #δp = half_levels[2:end] - half_levels[1:end-1]
-    δp = p
+    δp = half_pressure_levels(p)
     input_variables = zip(δp,T,vmr_H₂O)
     vcd = map(x -> vcd_pressure(x[1], x[2], x[3]), input_variables)
     return vcd
