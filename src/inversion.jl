@@ -136,18 +136,23 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     end
     
     
-    y = measurement.intensity;
-    xₐ = assemble_state_vector!(x₀);
-    num_levels = length(measurement.pressure)
-    xᵢ = copy(xₐ)
-    Sₐ⁻¹ = make_prior_error(inversion_setup["σ"])
-    tolerence = 1.0e-4;
-    γ = 1.0;
-    δᵢ = 15;
-    i = 1
-    Kᵢ = zeros((length(measurement.grid), length(xᵢ)))
-    fᵢ = f(xᵢ)
+    # state vectors 
+    xₐ = assemble_state_vector!(x₀); # apriori
+    Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+    xᵢ = copy(xₐ); # current state vector 
     
+    num_levels = length(measurement.pressure)
+    
+    tolerence = 1.0e-4; # relative error reached to stop loop
+    γ = 1.0; # regularization parameter 
+    δᵢ = 15.0; # relative errror 
+    i = 1; # iteration count 
+
+    # allocate memory for inversion matrixes
+    y = measurement.intensity; # obserbations 
+    Kᵢ = zeros((length(measurement.grid), length(xᵢ))) # jacobian
+    f_old = similar(y) # previous model-run 
+    fᵢ = similar(y) # current model-run
 
     # begin the non-linear fit
     while i<15 && δᵢ>tolerence
@@ -155,29 +160,25 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
         ForwardDiff.jacobian!(result, f, xᵢ);
-        f_old = fᵢ # reassign model output 
         fᵢ, Kᵢ = result.value, result.derivs[1]
 
         # Baysian Maximum Likelihood Estimation 
         lhs = (Sₐ⁻¹ + Kᵢ'*Sₒ⁻¹*Kᵢ + γ*Sₐ⁻¹)
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         Δx = lhs\rhs
-
-        x = xᵢ + Δx; # reassign state vector for next iteration
-        xᵢ = x
-
+        xᵢ = xᵢ + Δx; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
-        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));        
-        if i==1 #prevent premature ending of while loop
-            δᵢ = 1
-        end
-
+        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
         if inversion_setup["verbose_mode"]
             println("δᵢ for iteration ",i," is ",δᵢ)
         end
-        
+        if i==1 #prevent premature ending of while loop
+            δᵢ = 1.0
+        end
+
         i = i+1
+        f_old = fᵢ # reassign model output 
     end #while loop
 
     # Calculate χ²
