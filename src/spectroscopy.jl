@@ -17,10 +17,10 @@ function get_molecule_info(molecule::String, filename::String, molecule_num::Int
                              grid=ν_grid, model=model)
 end
 
-function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
+function get_molecule_info(molecule::String, filepath::String, ν_grid::AbstractArray)
     model = load_interpolation_model(filepath)
     #hitran_table = read_hitran(filepath, mol=model.mol, iso=model.iso, ν_min=model.ν_grid[1], ν_max=model.ν_grid[end])
-        return MolecularMetaData(molecule=molecule, filename=filepath, molecule_num=model.mol, iso_num=model.iso, grid=model.ν_grid, model=model)
+        return MolecularMetaData(molecule=molecule, filename=filepath, molecule_num=model.mol, isotope_num=model.iso, grid=ν_grid, model=model)
 end
 
 function setup_molecules(molecules::Vector{MolecularMetaData})

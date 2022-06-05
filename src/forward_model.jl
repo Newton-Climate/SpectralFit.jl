@@ -70,8 +70,8 @@ function apply_instrument( input_spectral_grid::AbstractArray{<:Real},
                                input_spectra::AbstractArray{<:Real},
                            output_spectral_grid::AbstractArray{<:Real})
     
-    #itp = interpolate(input_spectra, BSpline(Quadratic(Line(OnGrid()))))
-    itp = interpolate(input_spectra, BSpline(Linear()))
+    itp = interpolate(input_spectra, BSpline(Quadratic(Line(OnGrid()))))
+    #itp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
     sitp = scale(itp, input_spectral_grid)
     return sitp(output_spectral_grid)
 end # end of function apply_instrument
