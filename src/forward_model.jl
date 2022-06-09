@@ -47,7 +47,7 @@ function calculate_transmission(xₐ::AbstractDict{String,Vector{FT}}, spectra::
 
 
     n_levels = length(p)
-        vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
+    vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
     molecules = collect(keys(spectra))
     τ = zeros(FT, length(spectra[molecules[1]].grid))
     
