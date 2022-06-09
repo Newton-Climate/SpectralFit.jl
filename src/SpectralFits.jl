@@ -25,7 +25,8 @@ include("inversion.jl") # functions for retrieving and fitting
 
 ### export our structs and types
 # spectral-related types 
-export MolecularMetaData, Molecule, Spectra, OrderedDict, InversionResults
+export MolecularMetaData, Molecule, Spectra, OrderedDict
+export AbstractResults, InversionResults, FailedInversion
 export setup_molecules
 
 

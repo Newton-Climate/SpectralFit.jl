@@ -38,14 +38,23 @@ function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
     return Sₐ⁻¹
 end
 
+function failed_vector(xₐ::AbstractDict)
+    x_error = copy(xₐ)
+    for key in keys(xₐ)
+        x_error[key] = nan*xₐ[key]
+    end
+    return x_error
+end
 
 
 
 function failed_inversion(xₐ::OrderedDict, measurement::AbstractMeasurement)
 
     # define an x vector of NaNs 
-    x_error = OrderedDict(key => NaN*xₐ[key] for key in keys(xₐ))    
-    return InversionResults(measurement.time, measurement.machine_time, x_error, measurement.intensity, NaN*measurement.intensity, NaN, NaN, measurement.grid, NaN, NaN, NaN)
+    x_error = failed_vector(xₐ)
+    return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+                              x=x_error,
+                              measurement=measurement.intensity, grid=measurement.grid)
 end
 
 
@@ -84,7 +93,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
-         @time result = jf!(result, xᵢ)
+         result = jf!(result, xᵢ)
          x_old = copy(xᵢ)
         fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
 
@@ -94,14 +103,13 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         #evaluate relative difference between this and previous iteration 
          #δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
          δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
+         if inversion_setup["verbose_mode"]
+            println("δᵢ for iteration ",i," is ",δᵢ)
+        end
         if i==1 #prevent premature ending of while loop
             δᵢ = 1.0
         end
 
-        if inversion_setup["verbose_mode"]
-            println("δᵢ for iteration ",i," is ",δᵢ)
-        end
-        
          i = i+1
          f_old[:] = fᵢ
      end #while loop
@@ -167,6 +175,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         Δx = lhs\rhs
         xᵢ = xᵢ + Δx; # reassign state vector for next iteration
+        @show xᵢ[67:67+22] ./ measurement.vcd
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
@@ -199,22 +208,6 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Abst
     
     println(measurement_num)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
-
-    # Use a-priori pressure and temperature if given
-    # Otherwise, use the measurement information 
-        if haskey(xₐ, "pressure")
-        p = xₐ["pressure"]
-    else
-        p = measurement.pressure
-    end
-
-    if haskey(xₐ, "temperature")
-        T = xₐ["temperature"]
-    else
-        T = measurement.temperature
-    end
-
-#    spectra = construct_spectra(molecules, ν_grid=ν_range[1]-0.1:0.003:ν_range[end]+0.1, p=p, T=T, architecture=inversion_setup["architecture"])
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
@@ -227,47 +220,24 @@ end
 
 
 
-function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::AbstractDict)
-    num_measurements = length(dataset.pressure) # number of total measurements
-    modelled = Array{InversionResults}(undef, num_measurements)
-    num_windows = length(keys(spectral_windows));
-    results = Array{InversionResults}(undef, (num_windows, num_measurements));
-    println("Beginning inversion")
-    
-    for (j, spectral_window) in enumerate(keys(spectral_windows))
-
-        spectra = construct_spectra(molecules, ν_grid=spectral_window[1]-0.1:0.01:spectral_window[end]+0.1, T=xₐ["temperature"], p=xₐ["pressure"])
-        out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
-        results[j,:] = out;
-
-    end
-    return results
-end
-
 function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::Array{MolecularMetaData,1}, inversion_setup::Dict, spectral_windows::Vector)
     
     num_measurements = length(dataset.pressure) # number of total measurements
     modelled = Array{InversionResults}(undef, num_measurements)
     num_windows = length(spectral_windows);
-    results = Array{InversionResults}(undef, (num_windows, num_measurements));
+    results = Array{AbstractResults}(undef, (num_windows, num_measurements));
     println("Beginning inversion")
     
     for (j, spectral_window) in enumerate(spectral_windows)
 
-        spectra = construct_spectra(molecules, ν_grid=spectral_window[1]-0.1:0.01:spectral_window[end]+0.1, T=xₐ["temperature"], p=xₐ["pressure"])
+        spectra = setup_molecules(molecules)
         out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
         results[j,:] = out;
-
     end
     return results
 end
 
 
-
-        
-
-
-        
 function process_all_files(xₐ::AbstractDict,
                            dataset::AbstractDataset,
                            molecules::Array{MolecularMetaData,1},
