@@ -250,13 +250,13 @@ function process_all_files(xₐ::AbstractDict,
     for i=1:num_files
         
         file = files[i]
-        full_file = data_path*file
+        full_file = joinpath(data_path, file)
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
         println(file)
         
         data = read_DCS_data(full_file)
-        data = take_time_average(data, δt=inversion_setup["averaging_window"])
+        data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
         outfile = out_path*"/"*file[1:end-3]*"_results.JLD2";
@@ -279,13 +279,13 @@ function process_all_files(xₐ::AbstractDict,
     num_files = length(datafiles)
 
     for i=1:num_files
-        file = data_path * datafiles[i]
+        file = joinpath(data_path, datafiles[i])
         if endswith(file, ".h5") == false; continue; end;
         println(i,"/",num_files);
         println(file)
         
         data = read_DCS_data(file)
-        data = take_time_average(data, δt=inversion_setup["averaging_window"])
+        data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
         outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.JLD2";
