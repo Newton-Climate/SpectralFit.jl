@@ -243,10 +243,6 @@ function process_all_files(xₐ::AbstractDict,
                            spectral_windows::AbstractArray;
                            data_path::String=pwd(),
                            out_path::String=pwd())
-
-    if typeof(experiment_labels) <: Array{String,1}
-        @assert length(spectral_windows) == length(experiment_labels)
-    end
     
     files = readdir(data_path);
     num_files = length(files)
