@@ -1,5 +1,3 @@
-using JLD2, vSmartMOM, OrderedCollections, vSmartMOM.Absorption
-include("types.jl")
 
 function load_interp_model(filepath::String)
     @load filepath itp_model
@@ -16,14 +14,21 @@ function get_molecule_info(molecule::String, filename::String, molecule_num::Int
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
     return MolecularMetaData(molecule=molecule, filename=filename,
                              molecule_num=molecule_num, isotope_num=isotope_num,
-                             ν_grid=ν_grid, model=model)
+                             grid=ν_grid, model=model)
 end
 
-function get_molecule_info(molecule::String, filepath::String; hitran_table=nothing)
+function get_molecule_info(molecule::String, filepath::String, ν_grid::AbstractArray)
     model = load_interpolation_model(filepath)
     #hitran_table = read_hitran(filepath, mol=model.mol, iso=model.iso, ν_min=model.ν_grid[1], ν_max=model.ν_grid[end])
-        return MolecularMetaData(molecule, filepath, model.mol, model.iso, model.ν_grid, itp_model)
-    end
+        return MolecularMetaData(molecule=molecule, filename=filepath, molecule_num=model.mol, isotope_num=model.iso, grid=ν_grid, model=model)
+end
+
+function setup_molecules(molecules::Vector{MolecularMetaData})
+    out = OrderedDict{String, MolecularMetaData}( [molecules[i].molecule => molecules[i] for i in keys(molecules)])
+    return out
+end
+
+    
 
 
 """
@@ -102,28 +107,3 @@ function construct_spectra_by_layer!(spectra::Array{OrderedDict,1}; p::Array{<:R
     end
     return spectra
 end
-
-
-inversion_setup = Dict{String,Any}(
-    "poly_degree" => 100,
-    "fit_pressure" => true,
-    "fit_temperature" => true,
-    "use_OCO" => false,
-"use_TCCON" => false,
-"verbose_mode" => true,
-"architecture" => CPU(),
-"fit_column" => false)
-
-# Just defining the spectral windows for each species
-ν_CH4 = (6050, 6120)
-ν_range = ν_CH4[1]:ν_CH4[2]
-ν_min , ν_max = ν_CH4[1]-1, ν_CH4[end]+1
-
-
-CH₄ = get_molecule_info("CH4", "../data/hit20_12CH4.par", 6, 1, ν_range, architecture=inversion_setup["architecture"])
-H₂O = get_molecule_info("H2O", "../data/hit20_H2O.par", 1, 1, ν_range, architecture=inversion_setup["architecture"])
-CO₂ = get_molecule_info("CO2", "../data/hit20_12CO2.par", 2,1,ν_range, architecture=inversion_setup["architecture"])
-
-# Calculate the cross-sections and store in dictionary
-molecules = [H₂O, CH₄, CO₂]
-spec = construct_spectra(molecules, ν_grid=ν_min:0.003:ν_max, p=1e3, T=290.0)
