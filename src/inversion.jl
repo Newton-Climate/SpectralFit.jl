@@ -101,8 +101,8 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
          xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ);
 
         #evaluate relative difference between this and previous iteration 
-         #δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
-         δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
+         δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
+         #δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
          if inversion_setup["verbose_mode"]
             println("δᵢ for iteration ",i," is ",δᵢ)
         end
@@ -175,7 +175,6 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         Δx = lhs\rhs
         xᵢ = xᵢ + Δx; # reassign state vector for next iteration
-        @show xᵢ[67:67+22] ./ measurement.vcd
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
@@ -239,11 +238,9 @@ end
 
 
 function process_all_files(xₐ::AbstractDict,
-                           dataset::AbstractDataset,
                            molecules::Array{MolecularMetaData,1},
                            inversion_setup::Dict,
-                           spectral_windows::AbstractDict,
-                           experiment_labels::Union{String, Array{String,1}};
+                           spectral_windows::AbstractArray;
                            data_path::String=pwd(),
                            out_path::String=pwd())
 
@@ -276,18 +273,12 @@ end
 
 
 function process_all_files(xₐ::AbstractDict,
-                           dataset::AbstractDataset,
                            molecules::Array{MolecularMetaData,1},
                            inversion_setup::Dict,
-                           spectral_windows::AbstractDict,
-                           experiment_labels::Union{String, Array{String,1}},
+                           spectral_windows::AbstractArray,
                            datafiles::Array{String,1};
                            data_path::String=pwd(),
                            out_path::String=pwd())
-
-    if typeof(experiment_labels) <: Array{String,1}
-        @assert length(spectral_windows) == length(experiment_labels)
-    end
 
     num_files = length(datafiles)
 
@@ -302,7 +293,6 @@ function process_all_files(xₐ::AbstractDict,
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
         outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.JLD2";
-        #save_results(outfile, results, experiment_labels)
         @save outfile results
     end
     println("done with all files")
