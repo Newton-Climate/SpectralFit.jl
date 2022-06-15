@@ -172,7 +172,7 @@ f::Function: the forward model called as f(x::Vector)
     function f(x)
         # convert the state vector to a dict with labelled fields
         if typeof(x) <: AbstractArray
-            x = assemble_state_vector!(x, x₀_fields, inversion_setup)
+            x = assemble_state_vector!(x, x_fields, inversion_setup)
         end
         
         spectra_grid = spectra[x_fields[1]].grid
