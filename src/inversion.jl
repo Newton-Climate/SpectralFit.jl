@@ -93,9 +93,15 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
-         result = jf!(result, xᵢ)
-         x_old = copy(xᵢ)
-        fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
+         try
+             result = jf!(result, xᵢ)
+             x_old = copy(xᵢ)
+             fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
+         catch error
+             println(" jacobian and forward model calculation has failed")
+             return failed_inversion(xₐ, measurement)
+         end
+         
 
         # Gauss-Newton Algorithm
          xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ);
