@@ -48,6 +48,7 @@ Base.@kwdef mutable struct FailedInversion{FT} <: AbstractResults
     machine_time::FT
     x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
     measurement::Array{FT,1}
+    model::Array{FT,1}
     grid::Vector{FT}
 end
 
