@@ -41,7 +41,7 @@ end
 function failed_vector(xₐ::AbstractDict)
     x_error = copy(xₐ)
     for key in keys(xₐ)
-        x_error[key] = nan*xₐ[key]
+        x_error[key] = NaN*xₐ[key]
     end
     return x_error
 end
