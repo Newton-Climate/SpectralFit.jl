@@ -181,13 +181,7 @@ f::Function: the forward model called as f(x::Vector)
                 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
-        
-        #for the OCO line-list for CO₂
-        if inversion_setup["use_OCO"] && spectra["CO2"].grid[1] >= 6140 && spectra["CO2"].grid[end] <= 6300
 
-            spectra["CO2"].cross_sections = OCO_interp(spectra["CO2"].grid, x["temperature"], x["pressure"])
-        end
-        
         # apply Beer's Law
         if haskey(inversion_setup, "fit_column") && inversion_setup["fit_column"] == true
             transmission = calculate_transmission(x, spectra, len_spectra, p=p, T=T)
