@@ -56,7 +56,7 @@ function failed_inversion(xₐ::OrderedDict, measurement::AbstractMeasurement)
                               x=x_error,
                             measurement=measurement.intensity,
                             model = NaN*ones(length(measurement.intensity)),
-                            grid=measurement.grid)
+                            grid=measurement.grid, χ²=NaN)
 end
 
 

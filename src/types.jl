@@ -50,6 +50,7 @@ Base.@kwdef mutable struct FailedInversion{FT} <: AbstractResults
     measurement::Array{FT,1}
     model::Array{FT,1}
     grid::Vector{FT}
+    χ²::FT
 end
 
     
