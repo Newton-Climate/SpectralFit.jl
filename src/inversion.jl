@@ -99,7 +99,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
              fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
          catch error
              println(" jacobian and forward model calculation has failed")
-             return failed_inversion(xₐ, measurement)
+             return failed_inversion(x₀, measurement)
          end
          
 
