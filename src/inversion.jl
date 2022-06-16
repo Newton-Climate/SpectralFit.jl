@@ -233,14 +233,14 @@ function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::
     num_measurements = length(dataset.pressure) # number of total measurements
     modelled = Array{InversionResults}(undef, num_measurements)
     num_windows = length(spectral_windows);
-    results = Array{AbstractResults}(undef, (num_windows, num_measurements));
+    results = Array{AbstractResults}(undef, (num_measurements, num_windows));
     println("Beginning inversion")
     
     for (j, spectral_window) in enumerate(spectral_windows)
 
         spectra = setup_molecules(molecules)
         out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
-        results[j,:] = out;
+        results[:,j] = out;
     end
     return results
 end
@@ -268,7 +268,7 @@ function process_all_files(xₐ::AbstractDict,
         data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        outfile = out_path*"/"*file[1:end-3]*"_results.JLD2";
+        outfile = out_path*"/"*file[1:end-3]*"_results.jld2";
         #save_results(outfile, results, experiment_labels)
         @save outfile results
     end
@@ -297,7 +297,7 @@ function process_all_files(xₐ::AbstractDict,
         data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.JLD2";
+        outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.jld2";
         @save outfile results
     end
     println("done with all files")
