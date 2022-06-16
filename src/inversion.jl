@@ -267,7 +267,7 @@ function process_all_files(xₐ::AbstractDict,
         data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        outfile = out_path*"/"*file[1:end-3]*"_results.JLD2";
+        outfile = out_path*"/"*file[1:end-3]*"_results.jld2";
         #save_results(outfile, results, experiment_labels)
         @save outfile results
     end
@@ -296,7 +296,7 @@ function process_all_files(xₐ::AbstractDict,
         data = take_time_average!(data, δt=inversion_setup["averaging_window"])
         results = run_inversion(xₐ, data, molecules, inversion_setup, spectral_windows)
 
-        outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.JLD2";
+        outfile = out_path*"/"*datafiles[i][1:end-3]*"_results.jld2";
         @save outfile results
     end
     println("done with all files")
