@@ -9,7 +9,6 @@ end #function find_indexes
 
 """Calculate the vertical column density given pressure and temperature"""
 function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
-    δp = δp*100.0 # convert from mbar to pascals 
     dry_mass = 28.9647e-3  /Nₐ  # in kg/molec, weighted average for N2 and O2
     wet_mass = 18.01528e-3 /Nₐ  # just H2O
     ratio = dry_mass/wet_mass
@@ -22,7 +21,6 @@ end
 
 """Calculate the vertical column density given humidity, pressure, temperature, and layer thickness"""
 function calc_vcd(p::Real, T::Real, δz::Float64, VMR_H₂O::Real)
-    p = p*100.0 # from mBar to HPa
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
     return vcd
@@ -30,7 +28,6 @@ end # function calc_vcd
 
 """Calculate the vertical column density given pressure, temperature, and layer thickness"""
 function calc_vcd(p::Real, T::Real, δz::Float64)
-    p = p*100.0 
     VMR_H₂O = 0
     ρₙ = p*(1-VMR_H₂O) / (r*T)*Nₐ/1.0e4
     vcd = δz*ρₙ
