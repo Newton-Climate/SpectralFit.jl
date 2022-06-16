@@ -52,9 +52,11 @@ function failed_inversion(xₐ::OrderedDict, measurement::AbstractMeasurement)
 
     # define an x vector of NaNs 
     x_error = failed_vector(xₐ)
-    return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+    return FailedInversion(timestamp=measurement.time, machine_time=measurement.machine_time,
                               x=x_error,
-                              measurement=measurement.intensity, grid=measurement.grid)
+                            measurement=measurement.intensity,
+                            model = NaN*ones(length(measurement.intensity)),
+                            grid=measurement.grid)
 end
 
 
