@@ -141,7 +141,6 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # define the observational prior error covariance
         if haskey(inversion_setup, "obs_covariance")
-        println("Using user-defined covariance")
         Sₒ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_indexes")
         println("masking out selected wave-numbers")
@@ -151,10 +150,17 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         Sₒ⁻¹ = make_obs_error(measurement)
     end
     
+
+    # define the a priori covariance 
+        if haskey(inversion_setup, "Sₐ⁻¹")
+        Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
+    else
+        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+        end
     
     # state vectors 
     xₐ = assemble_state_vector!(x₀); # apriori
-    Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+    
     xᵢ = copy(xₐ); # current state vector 
     
     num_levels = length(measurement.pressure)
