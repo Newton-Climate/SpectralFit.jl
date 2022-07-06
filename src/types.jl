@@ -1,3 +1,6 @@
+StateVector = OrderedDict{String, Union{FT, Vector{FT}} where FT <: Real}
+ProfileStateVector = OrderedDict{String, Vector{FT} where FT <: Real}
+
 
 """
 stores the metadata of hitran line-lists and coefficients in type HitranTable
