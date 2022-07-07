@@ -35,7 +35,7 @@ abstract type AbstractResults end
 Base.@kwdef mutable struct InversionResults{FT} <: AbstractResults
     timestamp::DateTime
     machine_time::FT
-    x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
+    x::AbstractDict
     measurement::Array{FT,1}
     model::Array{FT,1}
     χ²::FT
