@@ -37,7 +37,7 @@ export AbstractDataset, FrequencyCombDataset
 export AbstractMeasurement, FrequencyCombMeasurement
 
 # State Vector types
-export StateVector, ColumnStateVector
+export StateVector, ProfileStateVector, InversionSetup
 
 ### export spectral-related functions
 export get_molecule_info, calculate_cross_sections, calculate_cross_sections!
