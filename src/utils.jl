@@ -139,25 +139,6 @@ function calc_χ²(result::InversionResults)
     return χ²
 end
 
-"""convert an array of arrays to an array"""
-function list2array(array_in::Array)
-    outer_dim, inner_dim = length(array_in), length(array_in[1])
-    data_type = typeof(array_in[1][1])
-
-    # allocate memory
-    array_out = Array{data_type}(undef, (outer_dim, inner_dim))
-    v = VectorOfArray(array_in)
-    array_out = convert(Array, v)
-    return array_out'
-end
-
-"""convert an array of arrays to an array"""
-function list2array!(array_out::Array, array_in::Array)
-    v = VectorOfArray(array_in)
-    array_out = convert(Array, v)
-    return array_out'
-end
-
 function calc_DCS_noise(data::FrequencyCombDataset)
 
     # select spectrally flat region 
