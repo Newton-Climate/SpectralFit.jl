@@ -1,7 +1,7 @@
 
 function make_obs_error(measurement::AbstractMeasurement;
                         σ²::Union{Nothing, Float64}=nothing,
-                        masked_indexes::Union{Vector{Int64}, Nothing}=nothing)
+                        masked_windows::Union{AbstractArray{<:Real}, Nothing}=nothing)
     
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
@@ -15,7 +15,12 @@ function make_obs_error(measurement::AbstractMeasurement;
     value = @. 1/noise * ones(n)
     Sₑ⁻¹ = Diagonal(value)
 
-    if masked_indexes != nothing
+    if masked_windows != nothing
+        masked_indexes = find_mask(measurement.grid, masked_windows)
+        
+        # the windows are outside the range of the grid
+        if isempty(masked_indexes); return Sₑ⁻¹; end
+        
         for i in masked_indexes
             Sₑ⁻¹[i,i] = 1/(1e5 * noise)
         end
@@ -65,9 +70,9 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     if haskey(inversion_setup, "obs_covariance")
         println("Using user-defined covariance")
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
-    elseif haskey(inversion_setup, "masked_indexes")
+    elseif haskey(inversion_setup, "masked_windows")
         println("masking out selected wave-numbers")
-        Sₑ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+        Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
     else
         println("default covariance")
         Sₑ⁻¹ = make_obs_error(measurement)
@@ -95,14 +100,14 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
-         try
+#         try
              result = jf!(result, xᵢ)
              x_old = copy(xᵢ)
              fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
-         catch error
-             println(" jacobian and forward model calculation has failed")
-             return failed_inversion(x₀, measurement)
-         end
+#         catch error
+#             println(" jacobian and forward model calculation has failed")
+#             return failed_inversion(x₀, measurement)
+#         end
          
 
         # Gauss-Newton Algorithm
