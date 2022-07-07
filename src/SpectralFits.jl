@@ -57,7 +57,7 @@ export nonlinear_inversion, profile_inversion, fit_spectra, run_inversion
 export process_all_files
 
 # some useful funcs fom utils.jl
-export assemble_state_vector!
+export assemble_state_vector!, prior_shape_params
 export make_vcd_profile, calc_gain_matrix
 
 # certain packages visible to the user

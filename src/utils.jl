@@ -90,7 +90,6 @@ function assemble_state_vector!(x::Union{StateVector, ProfileStateVector})
     for key in keys(x)
         out = append!(out, x[key])
     end
-    println(FT)
     return out
 end #function assemble_state_vector!
 
@@ -133,6 +132,13 @@ function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
     return P⁰
 end  
 
+
+function prior_shape_params(dataset::AbstractDataset,
+                            inversion_setup::AbstractDict)
+    return [maximum(dataset.intensity); zeros(inversion_setup["poly_degree"]-1)]
+end
+
+    
 """Calculate the gain matrix from InversionResults fields"""
 function calc_gain_matrix(inversion_results::InversionResults)
     G = inv(inversion_results.K'*inversion_results.Sₑ⁻¹*inversion_results.K + inversion_results.Sₐ⁻¹)*inversion_results.K'*inversion_results.Sₑ⁻¹
