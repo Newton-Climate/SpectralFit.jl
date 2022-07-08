@@ -69,7 +69,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
 
     verbose = inversion_setup["verbose_mode"]
     if haskey(inversion_setup, "obs_covariance")
-        if verbose; println("Using user-defined covariance") end
+        if verbose; println("Using user-defined covariance"); end
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
@@ -106,6 +106,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
              x_old = copy(xᵢ)
              fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
          catch error
+             println(error.msg)
              println(" jacobian and forward model calculation has failed")
              return failed_inversion(x₀, measurement)
          end
@@ -137,8 +138,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
                               x=x,
                               measurement=y, model=fᵢ, χ²=χ², S=S,
-                              grid=measurement.grid, K=kᵢ, Sₑ⁻¹=Sₑ⁻¹, Sₐ⁻¹=ones(length(measurement.grid))) 
-    
+                              grid=measurement.grid, K=kᵢ, Sₑ⁻¹=Sₑ⁻¹, Sₐ⁻¹=ones(length(measurement.grid)))     
 end#function
 
 
@@ -148,14 +148,14 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     verbose = inversion_setup["verbose_mode"]
     # define the observational prior error covariance
     if haskey(inversion_setup, "obs_covariance")
-        if verbose; println("default covariance"); end
-        Sₒ⁻¹ = inversion_setup["obs_covarience"]
-    if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
+    elseif haskey(inversion_setup, "masked_windows")
+        if verbose; println("masking out selected wave-numbers"); end
+        Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
     else
         if verbose; println("default covariance"); end
-        Sₒ⁻¹ = make_obs_error(measurement)
+        Sₑ⁻¹ = make_obs_error(measurement)
     end
     
 
@@ -164,9 +164,10 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
             if verbose; println("custom apriori matrix"); end
         Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
         else
-            if verbose;
+            if verbose; println("using default a priori covarience matrix"); end
         Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
         end
+    
     
     # state vectors 
     xₐ = assemble_state_vector!(x₀); # apriori
@@ -202,7 +203,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
-        if inversion_setup["verbose_mode"]
+        if verbose
             println("δᵢ for iteration ",i," is ",δᵢ)
         end
         if i==1 #prevent premature ending of while loop
@@ -223,10 +224,11 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
                               x=x,
                               measurement=y, model=fᵢ, χ²=χ², S=S,
                               grid=measurement.grid, K=Kᵢ, Sₑ⁻¹=Sₒ⁻¹, Sₐ⁻¹=Sₐ⁻¹)
-end#function    
+end#function
 
 
 
+ 
 function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::AbstractDataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
     
     println(measurement_num)
@@ -241,6 +243,7 @@ function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::Abst
     end    
     return results
 end
+
 
 
 
