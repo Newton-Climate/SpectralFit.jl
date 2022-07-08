@@ -74,19 +74,29 @@ function make_vcd_profile(p::Array{<:Real,1}, T::Array{<:Real,1}; vmr_H₂O=noth
     return vcd
 end
 
+function dicttype(x::AbstractDict)
+    k = collect(keys(x))
+    FT = eltype(x[k[1]])
+    return FT
+end
+
+
 """Convert a state vector{Dict} to an Array"""
-function assemble_state_vector!(x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}) where FT<:Real
-    out::Array{FT,1} = []
+function assemble_state_vector!(x::Union{StateVector, ProfileStateVector})
+
+    key = collect(keys(x))
+    FT = eltype(x[key[1]])
+    out::Vector{FT} = []
     for key in keys(x)
         out = append!(out, x[key])
-        end
+    end
     return out
 end #function assemble_state_vector!
 
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Vector{FT}, key_vector, inversion_setup::AbstractDict) where FT <: Real
 
-    out::OrderedDict{String, Union{FT, Vector{FT}}} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
+    out::StateVector = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end #function assemble_state_vector!
@@ -94,7 +104,7 @@ end #function assemble_state_vector!
 
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
-    out::OrderedDict{String, Vector{FT}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
+    out::ProfileStateVector = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end
@@ -122,6 +132,13 @@ function compute_legendre_poly(x::Array{<:Real,1}, nmax::Integer)
     return P⁰
 end  
 
+
+function prior_shape_params(dataset::AbstractDataset,
+                            inversion_setup::AbstractDict)
+    return [maximum(dataset.intensity); zeros(inversion_setup["poly_degree"]-1)]
+end
+
+    
 """Calculate the gain matrix from InversionResults fields"""
 function calc_gain_matrix(inversion_results::InversionResults)
     G = inv(inversion_results.K'*inversion_results.Sₑ⁻¹*inversion_results.K + inversion_results.Sₐ⁻¹)*inversion_results.K'*inversion_results.Sₑ⁻¹
@@ -137,25 +154,6 @@ function calc_χ²(result::InversionResults)
     
     χ² = (result.model - result.measurement)'* result.Sₑ⁻¹ * (result.model - result.measurement) / (length(result.model)-length(x))
     return χ²
-end
-
-"""convert an array of arrays to an array"""
-function list2array(array_in::Array)
-    outer_dim, inner_dim = length(array_in), length(array_in[1])
-    data_type = typeof(array_in[1][1])
-
-    # allocate memory
-    array_out = Array{data_type}(undef, (outer_dim, inner_dim))
-    v = VectorOfArray(array_in)
-    array_out = convert(Array, v)
-    return array_out'
-end
-
-"""convert an array of arrays to an array"""
-function list2array!(array_out::Array, array_in::Array)
-    v = VectorOfArray(array_in)
-    array_out = convert(Array, v)
-    return array_out'
 end
 
 function calc_DCS_noise(data::FrequencyCombDataset)
@@ -243,5 +241,14 @@ function calc_DCS_noise(grid::Array{Float64,1}, intensity::Array{Float64,2})
     return σ.^2
 end
 
-
+"""Find the indexes of the spectral windows being masked"""
+function find_mask(spectral_grid::Vector{<:Real}, # spectral grid 
+                   masked_windows::Array{<:Real,2}) # spectral windows to mask in the form [ν₁, ν₂]
+    
+    # Find all indices in the grid that is within the subwindows:
+    all = [findall(i -> (i>masked_windows[j,1])&(i<masked_windows[j,2]), spectral_grid) for j=1:size(masked_windows,1)];
+    
+    # Return all indices:
+    vcat(all...)
+end
     

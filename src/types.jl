@@ -1,3 +1,7 @@
+StateVector = OrderedDict{String, Union{FT, Vector{FT}} where FT <: Real}
+ProfileStateVector = OrderedDict{String, Vector{FT} where FT <: Real}
+RetrievalSetup = Dict{String, Any}
+
 
 """
 stores the metadata of hitran line-lists and coefficients in type HitranTable
@@ -31,7 +35,7 @@ abstract type AbstractResults end
 Base.@kwdef mutable struct InversionResults{FT} <: AbstractResults
     timestamp::DateTime
     machine_time::FT
-    x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
+    x::AbstractDict
     measurement::Array{FT,1}
     model::Array{FT,1}
     χ²::FT
