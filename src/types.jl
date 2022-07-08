@@ -31,7 +31,7 @@ abstract type AbstractResults end
 
 
     """-type for storing results from spectral fit
-- used later for saving into NetCDF files"""
+- used later for saaving into jld2 files"""
 Base.@kwdef mutable struct InversionResults{FT} <: AbstractResults
     timestamp::DateTime
     machine_time::FT
@@ -50,7 +50,7 @@ end
 Base.@kwdef mutable struct FailedInversion{FT} <: AbstractResults
     timestamp::DateTime
     machine_time::FT
-    x::Union{AbstractDict{String, Union{FT, Vector{FT}}}, AbstractDict{String, Vector{FT}}}
+    x::AbstractDict
     measurement::Array{FT,1}
     model::Array{FT,1}
     grid::Vector{FT}
