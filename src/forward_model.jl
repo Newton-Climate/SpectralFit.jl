@@ -15,9 +15,9 @@
 - returns:
 transmission::Vector: the calculated tranmission
 """
-function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290) where FT <: Real
+function calculate_transmission(x::StateVector, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290)
 
-    #molecules = collect(keys(spectra))
+    FT = dicttype(x)
     τ = zeros(FT, grid_length)
     vcd = calc_vcd(p, T, pathlength)
     
@@ -28,9 +28,9 @@ function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, 
     return exp.(-τ)
 end
 
-function calculate_transmission(x::AbstractDict{String, Union{FT, Vector{FT}}}, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=300) where FT <: Real
+function calculate_transmission(x::StateVector, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=300)
 
-    #k = collect(keys(spectra))
+    FT = dicttype(x)
     τ = zeros(FT, grid_length)
     
     for molecule in keys(spectra)
@@ -42,13 +42,14 @@ end
 
 
 """calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::AbstractDict{String,Vector{FT}}, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false) where FT <: Real
+function calculate_transmission(xₐ::ProfileStateVector, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)
     
 
 
     n_levels = length(p)
     vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
     molecules = collect(keys(spectra))
+    FT = dicttype(xₐ)
     τ = zeros(FT, length(spectra[molecules[1]].grid))
     
     for i = 1:n_levels

@@ -1,7 +1,7 @@
 
 function make_obs_error(measurement::AbstractMeasurement;
                         σ²::Union{Nothing, Float64}=nothing,
-                        masked_indexes::Union{Vector{Int64}, Nothing}=nothing)
+                        masked_windows::Union{AbstractArray{<:Real}, Nothing}=nothing)
     
     n = length(measurement.intensity)
     base = mean(measurement.intensity)
@@ -15,7 +15,12 @@ function make_obs_error(measurement::AbstractMeasurement;
     value = @. 1/noise * ones(n)
     Sₑ⁻¹ = Diagonal(value)
 
-    if masked_indexes != nothing
+    if masked_windows != nothing
+        masked_indexes = find_mask(measurement.grid, masked_windows)
+        
+        # the windows are outside the range of the grid
+        if isempty(masked_indexes); return Sₑ⁻¹; end
+        
         for i in masked_indexes
             Sₑ⁻¹[i,i] = 1/(1e5 * noise)
         end
@@ -62,14 +67,15 @@ end
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
+    verbose = inversion_setup["verbose_mode"]
     if haskey(inversion_setup, "obs_covariance")
-        println("Using user-defined covariance")
+        if verbose; println("Using user-defined covariance") end
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
-    elseif haskey(inversion_setup, "masked_indexes")
-        println("masking out selected wave-numbers")
-        Sₑ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+    elseif haskey(inversion_setup, "masked_windows")
+        if verbose; println("masking out selected wave-numbers"); end
+        Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
     else
-        println("default covariance")
+        if verbose; println("default covariance"); end
         Sₑ⁻¹ = make_obs_error(measurement)
     end
     
@@ -139,22 +145,26 @@ end#function
 """fit over an atmospheric column with multiple layers"""
 function profile_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
+    verbose = inversion_setup["verbose_mode"]
     # define the observational prior error covariance
-        if haskey(inversion_setup, "obs_covariance")
+    if haskey(inversion_setup, "obs_covariance")
+        if verbose; println("default covariance"); end
         Sₒ⁻¹ = inversion_setup["obs_covarience"]
-    elseif haskey(inversion_setup, "masked_indexes")
-        println("masking out selected wave-numbers")
-        Sₒ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+    if haskey(inversion_setup, "obs_covariance")
+        if verbose; println("Using user-defined covariance"); end
+        Sₑ⁻¹ = inversion_setup["obs_covarience"]
     else
-        println("default covariance")
+        if verbose; println("default covariance"); end
         Sₒ⁻¹ = make_obs_error(measurement)
     end
     
 
     # define the a priori covariance 
         if haskey(inversion_setup, "Sₐ⁻¹")
+            if verbose; println("custom apriori matrix"); end
         Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
-    else
+        else
+            if verbose;
         Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
         end
     
