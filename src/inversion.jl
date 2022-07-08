@@ -67,14 +67,15 @@ end
 
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
+    verbose = inversion_setup["verbose_mode"]
     if haskey(inversion_setup, "obs_covariance")
-        println("Using user-defined covariance")
+        if verbose; println("Using user-defined covariance") end
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_windows")
-        println("masking out selected wave-numbers")
+        if verbose; println("masking out selected wave-numbers"); end
         Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
     else
-        println("default covariance")
+        if verbose; println("default covariance"); end
         Sₑ⁻¹ = make_obs_error(measurement)
     end
     
@@ -100,14 +101,14 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
          #ForwardDiff.jacobian!(result, f, xᵢ)#,
-#         try
+         try
              result = jf!(result, xᵢ)
              x_old = copy(xᵢ)
              fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
-#         catch error
-#             println(" jacobian and forward model calculation has failed")
-#             return failed_inversion(x₀, measurement)
-#         end
+         catch error
+             println(" jacobian and forward model calculation has failed")
+             return failed_inversion(x₀, measurement)
+         end
          
 
         # Gauss-Newton Algorithm
@@ -144,22 +145,26 @@ end#function
 """fit over an atmospheric column with multiple layers"""
 function profile_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
+    verbose = inversion_setup["verbose_mode"]
     # define the observational prior error covariance
-        if haskey(inversion_setup, "obs_covariance")
+    if haskey(inversion_setup, "obs_covariance")
+        if verbose; println("default covariance"); end
         Sₒ⁻¹ = inversion_setup["obs_covarience"]
-    elseif haskey(inversion_setup, "masked_indexes")
-        println("masking out selected wave-numbers")
-        Sₒ⁻¹ = make_obs_error(measurement, masked_indexes=inversion_setup["masked_indexes"])
+    if haskey(inversion_setup, "obs_covariance")
+        if verbose; println("Using user-defined covariance"); end
+        Sₑ⁻¹ = inversion_setup["obs_covarience"]
     else
-        println("default covariance")
+        if verbose; println("default covariance"); end
         Sₒ⁻¹ = make_obs_error(measurement)
     end
     
 
     # define the a priori covariance 
         if haskey(inversion_setup, "Sₐ⁻¹")
+            if verbose; println("custom apriori matrix"); end
         Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
-    else
+        else
+            if verbose;
         Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
         end
     
