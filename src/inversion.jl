@@ -106,7 +106,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
              x_old = copy(xᵢ)
              fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
          catch error
-             println(error.msg)
+             #println(error.msg)
              println(" jacobian and forward model calculation has failed")
              return failed_inversion(x₀, measurement)
          end
@@ -229,7 +229,7 @@ end#function
 
 
  
-function fit_spectra(measurement_num::Integer, xₐ::AbstractDict, dataset::AbstractDataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
+function fit_spectra(measurement_num::Integer, f::Function, xₐ::AbstractDict, dataset::AbstractDataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
     
     println(measurement_num)
     measurement = get_measurement(measurement_num, dataset, ν_range[1], ν_range[end])
@@ -257,7 +257,9 @@ function run_inversion(xₐ::AbstractDict, dataset::AbstractDataset, molecules::
     for (j, spectral_window) in enumerate(spectral_windows)
 
         spectra = setup_molecules(molecules)
-        out = pmap(i -> fit_spectra(i, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
+        measurement = get_measurement(1, dataset, spectral_window[1], spectral_window[end])
+    f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
+        out = pmap(i -> fit_spectra(i, f, xₐ, dataset, spectra, spectral_window, inversion_setup), 1:num_measurements)
         results[:,j] = out;
     end
     return results
