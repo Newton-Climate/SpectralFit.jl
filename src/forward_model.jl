@@ -15,7 +15,7 @@
 - returns:
 transmission::Vector: the calculated tranmission
 """
-function calculate_transmission(x::StateVector, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290)
+function calculate_transmission(x::AbstractDict, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290)
 
     FT = dicttype(x)
     τ = zeros(FT, grid_length)
@@ -28,7 +28,7 @@ function calculate_transmission(x::StateVector, pathlength::Real, spectra::Abstr
     return exp.(-τ)
 end
 
-function calculate_transmission(x::StateVector, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=300)
+function calculate_transmission(x::AbstractDict, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=300)
 
     FT = dicttype(x)
     τ = zeros(FT, grid_length)
@@ -42,7 +42,7 @@ end
 
 
 """calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::ProfileStateVector, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)
+function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)
     
 
 

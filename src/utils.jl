@@ -82,7 +82,7 @@ end
 
 
 """Convert a state vector{Dict} to an Array"""
-function assemble_state_vector!(x::Union{StateVector, ProfileStateVector})
+function assemble_state_vector!(x::AbstractDict)
 
     key = collect(keys(x))
     FT = eltype(x[key[1]])
@@ -96,7 +96,7 @@ end #function assemble_state_vector!
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Vector{FT}, key_vector, inversion_setup::AbstractDict) where FT <: Real
 
-    out::StateVector = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
+    out::OrderedDict{String, Union{FT, Vector{FT}}} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end #function assemble_state_vector!
@@ -104,7 +104,7 @@ end #function assemble_state_vector!
 
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
-    out::ProfileStateVector = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
+    out::OrderedDict{String, FT, Vector{FT}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end
