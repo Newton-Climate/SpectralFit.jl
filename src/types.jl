@@ -1,5 +1,16 @@
-StateVector = OrderedDict{String, Union{FT, Vector{FT}} where FT <: Real}
-ProfileStateVector = OrderedDict{String, Vector{FT} where FT <: Real}
+function StateVector(x...)
+    FT = eltype(x[1][2])
+    out = OrderedDict{String, Union{FT, Vector{FT}}}([x[i][1] => x[i][2] for i in eachindex(x)])
+    return out
+end
+
+
+function ProfileStateVector(x...)
+    FT = eltype(x[1][2])
+    out = OrderedDict{String, Vector{FT}}([x[i][1] => x[i][2] for i in eachindex(x)])
+    return out
+end
+
 RetrievalSetup = Dict{String, Any}
 
 
@@ -35,7 +46,7 @@ abstract type AbstractResults end
 Base.@kwdef mutable struct InversionResults{FT} <: AbstractResults
     timestamp::DateTime
     machine_time::FT
-    x::AbstractDict
+    x::Union{OrderedDict{String, Union{FT, Vector{FT}}}, OrderedDict{String, Vector{FT}}}
     measurement::Array{FT,1}
     model::Array{FT,1}
     χ²::FT
