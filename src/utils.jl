@@ -14,7 +14,7 @@ function vcd_pressure(δp::Real, T::Real, vmr_H₂O::Real)
     ratio = dry_mass/wet_mass
     vmr_dry = 1 - vmr_H₂O
     M  = vmr_dry * dry_mass + vmr_H₂O * wet_mass
-    vcd_dry = vmr_dry*δp/(M*g₀*100.0^2)   #includes m2->cm2
+    vcd_dry = 100.0*vmr_dry*δp/(M*g₀*100.0^2)   #includes m2->cm2
     #vcd_H₂O = vmr_H₂O*δp/(M*g₀*100^2)
     return vcd_dry #+ vcd_H₂O
 end
@@ -104,7 +104,7 @@ end #function assemble_state_vector!
 
 """Convert the state vecotr{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
-    out::OrderedDict{String, FT, Vector{FT}} = OrderedDict([fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1])
+    out = OrderedDict{String, Vector{FT}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1)
     out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
     return out
 end
