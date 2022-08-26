@@ -125,12 +125,6 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         end
         if i==1 #prevent premature ending of while loop
             δᵢ = 1.0
-        else
-            if δ_old < δᵢ
-                γ = γ * 2.0
-            else
-                γ = γ/ 2.0
-            end
             end
 
          i += 1
@@ -261,7 +255,116 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 end#function
 
 
+function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
+    verbose = inversion_setup["verbose_mode"]
+    # define the observational prior error covariance
+    if haskey(inversion_setup, "obs_covariance")
+        if verbose; println("Using user-defined covariance"); end
+        Sₒ⁻¹ = inversion_setup["obs_covarience"]
+    elseif haskey(inversion_setup, "masked_windows")
+        if verbose; println("masking out selected wave-numbers"); end
+        Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
+    else
+        if verbose; println("default covariance"); end
+        Sₒ⁻¹ = make_obs_error(measurement)
+    end
+    
+
+    # define the a priori covariance 
+        if haskey(inversion_setup, "Sₐ⁻¹")
+            if verbose; println("custom apriori matrix"); end
+        Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
+        else
+            if verbose; println("using default a priori covarience matrix"); end
+        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+        end
+    
+    
+    # state vectors 
+    xₐ = assemble_state_vector!(x₀); # apriori   
+    xᵢ = copy(xₐ); # current state vector 
+    
+    num_levels = length(measurement.pressure)   
+    tolerence = 1.0e-4; # relative error reached to stop loop
+
+    #regularization parameter 
+    if haskey(inversion_setup, "γ")
+        γ = inversion_setup["γ"]
+        else
+        γ = 1.0; # regularization parameter
+    end
+    
+    δᵢ, δ_old = 15.0, 20.0; # relative errror
+    χ²_old = 0.001
+    i = 1; # iteration count 
+
+    # allocate memory for inversion matrixes
+    y = measurement.intensity; # obserbations 
+    Kᵢ = zeros((length(measurement.grid), length(xᵢ))) # jacobian
+    f_old = similar(y) # previous model-run 
+    fᵢ = similar(y) # current model-run
+    m, n = length(y), length(xᵢ)
+    degrees::Float64 = m - n
+
+    # begin the non-linear fit
+    while i<30 && δᵢ>tolerence
+
+        # evaluate the model and jacobian 
+        result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
+        ForwardDiff.jacobian!(result, f, xᵢ);
+        fᵢ, Kᵢ = result.value, result.derivs[1]
+        j_old = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
+        x_old, f_old = xᵢ, fᵢ
+
+        # Baysian Maximum Likelihood Estimation 
+        # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)
+        lhs = (Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹ + γ*Sₐ⁻¹)
+        rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
+        δx = lhs\rhs
+        xᵢ = xᵢ + δx; # reassign state vector for next iteration
+
+        ## evaluate linearity of this step
+        fᵢ = f(xᵢ)
+        j_new = (y-fᵢ)'* Sₒ⁻¹ *(y-fᵢ) + (xₐ - xᵢ)'*Sₐ⁻¹*(xₐ - xᵢ)
+        j_pred = (y - f_old - Kᵢ*δx)' *Sₒ⁻¹ *(y-f_old - Kᵢ*δx) + (xₐ - xᵢ - δx)'*Sₐ⁻¹*(xₐ - xᵢ - δx)
+        r = (j_new - j_old) / (j_pred - j_old)
+        
+        # If not close to linear, then increase γ and step-size
+        if r > 0.75
+            γ = γ / 2.0
+        elseif r < 0.25
+            γ = γ <= 0 ? 1.0 : γ*10.0
+        end
+        
+        #evaluate relative difference between this and previous iteration 
+        δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
+         χ² = (y-fᵢ)'* Sₒ⁻¹ *(y-fᵢ)/degrees 
+         #δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
+         if inversion_setup["verbose_mode"]
+             println("δᵢ for iteration ",i," is ",δᵢ)
+             @show χ²
+        end
+        if i==1 #prevent premature ending of while loop
+            δᵢ = 1.0
+        end
+       
+         i += 1
+        δ_old = δᵢ
+        χ²_old = χ²
+    end #while loop
+
+    # Calculate χ²
+    χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
+
+    # Gain matrix
+    return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
+                              x=x,
+                              measurement=y, model=fᵢ, χ²=χ², S=S,
+                              grid=measurement.grid, K=Kᵢ, Sₑ⁻¹=Sₒ⁻¹, Sₐ⁻¹=Sₐ⁻¹)
+end#function
  
 function fit_spectra(measurement_num::Integer, f::Function, xₐ::AbstractDict, dataset::AbstractDataset, spectra::AbstractDict, ν_range::Tuple, inversion_setup::Dict{String,Any})
     
