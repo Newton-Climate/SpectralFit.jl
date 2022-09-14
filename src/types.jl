@@ -7,7 +7,8 @@ end
 
 function ProfileStateVector(x...)
     FT = eltype(x[1][2])
-    out = OrderedDict{String, Vector{FT}}([x[i][1] => x[i][2] for i in eachindex(x)])
+    println(x[1:end])
+    out = OrderedDict{String, Vector{<:Real}}([x[i][1] => x[i][2] for i in eachindex(x)])
     return out
 end
 
