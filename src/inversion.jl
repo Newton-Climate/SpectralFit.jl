@@ -1,18 +1,25 @@
 
 function make_obs_error(measurement::AbstractMeasurement;
                         σ²::Union{Nothing, Float64}=nothing,
-                        masked_windows::Union{AbstractArray{<:Real}, Nothing}=nothing)
+                        masked_windows::Union{AbstractArray{<:Real}, Nothing}=nothing,
+                        linear=false)
     
     n = length(measurement.intensity)
-    base = mean(measurement.intensity)
 
     if σ²==nothing # get noise from the instrument
         noise = measurement.σ²
     else #get noise from user 
         noise = σ²
     end
+
+    value = ones(n)
+    if linear
+        value .= 1 ./ (noise ./ measurement.intensity .^2)
+    else
+        value .*= @. 1/noise
+    end
     
-    value = @. 1/noise * ones(n)
+    
     Sₑ⁻¹ = Diagonal(value)
 
     if masked_windows != nothing
@@ -68,15 +75,16 @@ end
 function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
     verbose = inversion_setup["verbose_mode"]
+    linear = inversion_setup["linear"]
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
         Sₑ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
-        Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
+        Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
     else
         if verbose; println("default covariance"); end
-        Sₑ⁻¹ = make_obs_error(measurement)
+        Sₑ⁻¹ = make_obs_error(measurement, linear=linear)
     end
     
     y = measurement.intensity;
@@ -85,6 +93,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     tolerence = 1.0e-2;
     δᵢ = 10.0;
     i = 1
+    max_iter = linear ? 1 : 30
     state_length, grid_length = length(xᵢ), length(measurement.grid)
         kᵢ = zeros(grid_length, state_length)
         fᵢ = zeros(grid_length)
@@ -95,7 +104,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     jf! = (out, _x) -> ForwardDiff.jacobian!(out, f, _x)
     
     # begin the non-linear fit
-     while i<10 && δᵢ>tolerence
+     while i <= max_iter && δᵢ>tolerence
 
         # evaluate the model and jacobian
         
@@ -148,16 +157,17 @@ end#function
 function profile_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
     verbose = inversion_setup["verbose_mode"]
+    linear = inversion_setup["linear"]
     # define the observational prior error covariance
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
-        Sₒ⁻¹ = inversion_setup["obs_covarience"]
+        Sₒ⁻¹ = inversion_setup["obs_covarience"] 
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
-        Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
+        Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
     else
         if verbose; println("default covariance"); end
-        Sₒ⁻¹ = make_obs_error(measurement)
+        Sₒ⁻¹ = make_obs_error(measurement, linear=linear)
     end
     
 
@@ -189,7 +199,8 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     
     δᵢ, δ_old = 15.0, 20.0; # relative errror
     χ²_old = 0.001
-    i = 1; # iteration count 
+    i = 1; # iteration count
+    max_iter = linear ? 1 : 30
 
     # allocate memory for inversion matrixes
     y = measurement.intensity; # obserbations 
@@ -200,7 +211,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     degrees::Float64 = m - n
 
     # begin the non-linear fit
-    while i<30 && δᵢ>tolerence
+    while i <= max_iter && δᵢ>tolerence
 
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
@@ -210,7 +221,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)
-        lhs = (Sₐ⁻¹ + Kᵢ'*Sₒ⁻¹*Kᵢ + γ*Sₐ⁻¹)
+        lhs = (Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹ + γ*Sₐ⁻¹)
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         Δx = lhs\rhs
         xᵢ = xᵢ + Δx; # reassign state vector for next iteration
@@ -258,16 +269,17 @@ end#function
 function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
 
     verbose = inversion_setup["verbose_mode"]
+    linear = inversion_setup["linear"]
     # define the observational prior error covariance
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
         Sₒ⁻¹ = inversion_setup["obs_covarience"]
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
-        Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"])
+        Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
     else
         if verbose; println("default covariance"); end
-        Sₒ⁻¹ = make_obs_error(measurement)
+        Sₒ⁻¹ = make_obs_error(measurement, linear=linear)
     end
     
 
@@ -279,7 +291,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
             if verbose; println("using default a priori covarience matrix"); end
         Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
         end
-    
+
     
     # state vectors 
     xₐ = assemble_state_vector!(x₀); # apriori   
@@ -287,7 +299,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     
     num_levels = length(measurement.pressure)   
     tolerence = 1.0e-4; # relative error reached to stop loop
-
+    max_iter = linear ? 1 : 30
+    
     #regularization parameter 
     if haskey(inversion_setup, "γ")
         γ = inversion_setup["γ"]
@@ -308,7 +321,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     degrees::Float64 = m - n
 
     # begin the non-linear fit
-    while i<30 && δᵢ>tolerence
+    while i <= max_iter && δᵢ>tolerence
 
         # evaluate the model and jacobian 
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
@@ -316,7 +329,10 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         fᵢ, Kᵢ = result.value, result.derivs[1]
         j_old = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
         x_old, f_old = xᵢ, fᵢ
-
+        if linear
+            measurement.intensity = fᵢ;
+            Sₒ⁻¹ = make_obs_error(measurement, linear=linear)
+        end
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)
         lhs = (Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹ + γ*Sₐ⁻¹)
@@ -355,6 +371,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     end #while loop
 
     # Calculate χ²
+    
+    
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
     S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
