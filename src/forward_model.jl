@@ -42,7 +42,7 @@ end
 
 
 """calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)
+function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)                                
     
 
 
@@ -194,9 +194,12 @@ f::Function: the forward model called as f(x::Vector)
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
-        intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
-
-        #intensity .*= polynomial_term
+        if inversion_setup["linear"]
+            intensity = log.(intensity)
+            intensity .+= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        else
+            intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        end
         return intensity 
     end
     return f
@@ -226,7 +229,13 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
-        intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        if inversion_setup["linear"]
+            intensity = log.(intensity)
+            intensity .+= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        else
+            intensity .*= calc_polynomial_term(inversion_setup["poly_degree"], x["shape_parameters"], len_measurement)
+        end
+            
         return intensity 
     end
     return f
