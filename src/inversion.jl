@@ -14,6 +14,7 @@ function make_obs_error(measurement::AbstractMeasurement;
 
     value = ones(n)
     if linear
+        println("linear obs error")
         value .= 1 ./ (noise ./ measurement.intensity .^2)
     else
         value .*= @. 1/noise
@@ -188,7 +189,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     
     num_levels = length(measurement.pressure)
     
-    tolerence = 1.0e-4; # relative error reached to stop loop
+    tolerence = 1.0e-3; # relative error reached to stop loop
 
     #regularization parameter 
     if haskey(inversion_setup, "γ")
@@ -299,7 +300,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     
     num_levels = length(measurement.pressure)   
     tolerence = 1.0e-4; # relative error reached to stop loop
-    max_iter = linear ? 1 : 30
+    max_iter = linear ? 10 : 30
     
     #regularization parameter 
     if haskey(inversion_setup, "γ")
@@ -352,6 +353,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         elseif r < 0.25
             γ = γ <= 0 ? 1.0 : γ*10.0
         end
+        @show γ
+        @show r
         
         #evaluate relative difference between this and previous iteration 
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
@@ -364,17 +367,17 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         if i==1 #prevent premature ending of while loop
             δᵢ = 1.0
         end
+
+        if 0.95 < χ² < 1.05; break; end
        
          i += 1
         δ_old = δᵢ
         χ²_old = χ²
     end #while loop
 
-    # Calculate χ²
-    
-    
+    # Calculate χ²      
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
-    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ  + Sₐ⁻¹); # posterior error covarience
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
 
     # Gain matrix
