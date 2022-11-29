@@ -41,7 +41,7 @@ end
 
 
 
-"""Make prior error covarience matrix"""
+"""Make prior error covariance matrix"""
 function make_prior_error(σ::Union{Array{<:Real,1}, OrderedDict})
     if typeof(σ) <: AbstractDict
         σ = assemble_state_vector!(σ)
@@ -79,7 +79,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     linear = inversion_setup["linear"]
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
-        Sₑ⁻¹ = inversion_setup["obs_covarience"]
+        Sₑ⁻¹ = inversion_setup["obs_covariance"]
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
         Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
@@ -144,7 +144,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
 
     # Calculate χ²
     χ² = (y-fᵢ)'* Sₑ⁻¹ *(y-fᵢ)/(length(fᵢ)-length(xᵢ))
-    S = inv(kᵢ'*Sₑ⁻¹*kᵢ); # posterior error covarience
+    S = inv(kᵢ'*Sₑ⁻¹*kᵢ); # posterior error covariance
 
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
     return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
@@ -162,7 +162,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     # define the observational prior error covariance
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
-        Sₒ⁻¹ = inversion_setup["obs_covarience"] 
+        Sₒ⁻¹ = inversion_setup["obs_covariance"] 
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
         Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
@@ -177,8 +177,8 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
             if verbose; println("custom apriori matrix"); end
         Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
         else
-            if verbose; println("using default a priori covarience matrix"); end
-        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+            if verbose; println("using default a priori covariance matrix"); end
+        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covariance  matrix 
         end
     
     
@@ -256,7 +256,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
-    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covarience
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covariance
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
 
     # Gain matrix
@@ -274,7 +274,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     # define the observational prior error covariance
     if haskey(inversion_setup, "obs_covariance")
         if verbose; println("Using user-defined covariance"); end
-        Sₒ⁻¹ = inversion_setup["obs_covarience"]
+        Sₒ⁻¹ = inversion_setup["obs_covariance"]
     elseif haskey(inversion_setup, "masked_windows")
         if verbose; println("masking out selected wave-numbers"); end
         Sₒ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
@@ -289,8 +289,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
             if verbose; println("custom apriori matrix"); end
         Sₐ⁻¹ = inversion_setup["Sₐ⁻¹"]
         else
-            if verbose; println("using default a priori covarience matrix"); end
-        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covarience  matrix 
+            if verbose; println("using default a priori covariance matrix"); end
+        Sₐ⁻¹ = make_prior_error(inversion_setup["σ"]); # a priori covariance  matrix 
         end
 
     
@@ -377,7 +377,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
 
     # Calculate χ²      
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
-    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ  + Sₐ⁻¹); # posterior error covarience
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ  + Sₐ⁻¹); # posterior error covariance
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
 
     # Gain matrix
