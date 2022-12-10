@@ -91,7 +91,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     y = measurement.intensity;
     xᵢ = x₀;
     xᵢ = assemble_state_vector!(xᵢ)
-    tolerence = 1.0e-2;
+    tolerence = 1.0e-4;
     δᵢ = 10.0;
     i = 1
     max_iter = linear ? 1 : 30
@@ -110,11 +110,13 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         # evaluate the model and jacobian
         
         #result = DiffResults.JacobianResult(measurement.grid, xᵢ);
-         #ForwardDiff.jacobian!(result, f, xᵢ)#,
-         try
+        #ForwardDiff.jacobian!(result, f, xᵢ)#,
+	f_old = copy(fᵢ)
+
+        try
              result = jf!(result, xᵢ)
              x_old = copy(xᵢ)
-             fᵢ[:], kᵢ[:,:] = result.value, result.derivs[1]
+             fᵢ, kᵢ[:,:] = result.value, result.derivs[1]
          catch error
              #println(error.msg)
              println(" jacobian and forward model calculation has failed")
@@ -138,7 +140,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
             end
 
          i += 1
-         f_old, δ_old = fᵢ, δᵢ
+         #δ_old = δᵢ
      end #while loop
     
 
@@ -201,7 +203,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     δᵢ, δ_old = 15.0, 20.0; # relative errror
     χ²_old = 0.001
     i = 1; # iteration count
-    max_iter = linear ? 1 : 30
+    max_iter = linear ? 1 : 10
 
     # allocate memory for inversion matrixes
     y = measurement.intensity; # obserbations 
