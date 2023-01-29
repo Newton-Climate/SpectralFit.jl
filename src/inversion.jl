@@ -92,7 +92,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     xᵢ = x₀;
     xᵢ = assemble_state_vector!(xᵢ)
     tolerence = 1.0e-4;
-    δᵢ = 10.0;
+    δᵢ = 100.0;
     i = 1
     max_iter = linear ? 1 : 30
     state_length, grid_length = length(xᵢ), length(measurement.grid)
@@ -191,7 +191,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     
     num_levels = length(measurement.pressure)
     
-    tolerence = 1.0e-3; # relative error reached to stop loop
+    tolerence = 1.0e-5; # relative error reached to stop loop
 
     #regularization parameter 
     if haskey(inversion_setup, "γ")
@@ -203,7 +203,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     δᵢ, δ_old = 15.0, 20.0; # relative errror
     χ²_old = 0.001
     i = 1; # iteration count
-    max_iter = linear ? 1 : 10
+    max_iter = 10
 
     # allocate memory for inversion matrixes
     y = measurement.intensity; # obserbations 
@@ -240,7 +240,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         if i==1 #prevent premature ending of while loop
             δᵢ = 1.0
         end
-        if χ²_old < 1.1 && δᵢ > 1.0; xᵢ = x_old; break; end
+        #if χ²_old < 1.1 && δᵢ > 1.0; xᵢ = x_old; break; end
 
 
 #        if 0.7 < χ² / χ²_old < 1.0
@@ -301,7 +301,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     xᵢ = copy(xₐ); # current state vector 
     
     num_levels = length(measurement.pressure)   
-    tolerence = 1.0e-4; # relative error reached to stop loop
+    tolerence = 1.0e-5; # relative error reached to stop loop
     max_iter = linear ? 10 : 30
     
     #regularization parameter 
@@ -370,7 +370,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
             δᵢ = 1.0
         end
 
-        if 0.95 < χ² < 1.05; break; end
+        #if 0.95 < χ² < 1.05; break; end
        
          i += 1
         δ_old = δᵢ
