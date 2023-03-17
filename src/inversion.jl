@@ -298,13 +298,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     xᵢ = copy(xₐ); # current state vector 
     
     num_levels = length(measurement.pressure)   
-<<<<<<< HEAD
     tolerence = 1.0e-5; # relative error reached to stop loop
     max_iter = linear ? 10 : 30
-=======
-    tolerence = 1.0e-6; # relative error reached to stop loop
-    max_iter = linear ? 5 : 5
->>>>>>> feat/multiple_windows
     
     #regularization parameter 
     if haskey(inversion_setup, "γ")
