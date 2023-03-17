@@ -69,6 +69,25 @@ Base.@kwdef mutable struct FailedInversion{FT} <: AbstractResults
     χ²::FT
 end
 
+abstract type AbstractEnv end
+
+Base.@kwdef mutable struct SurfaceEnv <: AbstractEnv
+    p
+    T
+    vcd
+    pathlength
+end
+
+Base.@kwdef mutable struct ProfileEnv <: AbstractEnv
+    num_layers::Int
+    p::Array{<:Real,1}
+    T::Array{<:Real,1}
+    vcd::Array{<:Real,1}
+    pathlength::AbstractFloat
+    ϕ::AbstractFloat
+end
+    
+
     
 
 abstract type AbstractDataset end
@@ -88,7 +107,6 @@ Base.@kwdef mutable struct FrequencyCombDataset{FT} <: AbstractDataset
     σ²::Vector{FT}
     vcd::Vector{FT}
 end
-
 
 abstract type AbstractMeasurement end
 
