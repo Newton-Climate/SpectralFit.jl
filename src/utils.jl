@@ -9,9 +9,9 @@ end #function find_indexes
 
 
 """Finds the indexes given values ν_min:ν_max and returns the grid at those values """
-function find_measurement_grid(ν_min::Real, ν_max::Real, ν_grid::Array{<:Real,1})
+function find_measurement_grid(spectral_window, ν_grid::Array{<:Real,1})
     
-    indexes = findall(x-> ν_min<x<ν_max, ν_grid)
+    indexes = findall(x-> spectral_window[1]<x<spectral_window[end], ν_grid)
     return ν_grid[indexes]
 end #function find_indexes
 
@@ -261,17 +261,25 @@ function find_mask(spectral_grid::Vector{<:Real}, # spectral grid
 end
     
 
-function make_shape_params(measurement_grid::AbstractArray, spectral_windows, inversion_setup)
+function make_shape_params(measurement, spectral_windows, inversion_setup)
     shape_params::Vector{Float64} = []
     for (i, window) in enumerate(spectral_windows)
         degree = inversion_setup["poly_degree"][i]
 
-        inds = findall(x-> window[1]<x<=window[end], measurement_grid) # find the indexes in the window
+        inds = findall(x-> window[1]<x<=window[end], measurement.grid) # find the indexes in the window
         shape_params_window = [maximum(measurement.intensity[inds]); zeros(degree-1)]
         append!(shape_params, shape_params_window)
     end
 
     return shape_params
+end
+
+function check_param(inversion_setup, param)
+    if haskey(inversion_setup, param)
+        return inversion_setup[param]
+    else
+        return false
+    end
 end
 
 
