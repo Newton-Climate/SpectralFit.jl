@@ -15,15 +15,43 @@
 - returns:
 transmission::Vector: the calculated tranmission
 """
-function calculate_transmission(x::AbstractDict, pathlength::Real, spectra::AbstractDict, grid_length::Int; p::Real=1000, T::Real=290)
+function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathlength::Real, grid_length::Int; 
+                                p::Real=1000, T::Real=290, use_OCO_table=false, adjust_ch4_broadening=false, fit_column=false)
 
     FT = dicttype(x)
     τ = zeros(FT, grid_length)
-    vcd = calc_vcd(p, T, pathlength)
+    H2O = haskey(x, "H2O") ? x["H2O"] : 0.0
+    vcd_wet = calc_vcd(p, T, pathlength)
+
+    if fit_column
+        vmr_H2O = H2O / (vcd_wet - H2O)
+        @show vmr_H2O
+        vcd_dry = 1.0
+    else
+        vmr_H2O = x["H2O"]
+        vcd_dry = calc_vcd(p, T, pathlength, vmr_H2O)
+    end
     
+   
     for molecule in keys(spectra)
-        σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
-    τ += vcd * x[molecule] * σ
+ 
+        if spectra[molecule].molecule_num == 6 && adjust_ch4_broadening
+        println("adjusting CH4 pressure")
+
+            p_adjusted = p*(1+0.34*vmr_H2O)
+        @show p
+        @show p_adjusted 
+            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
+
+        elseif spectra[molecule].molecule_num == 2 && use_OCO_table
+            println("using CO2 tables")
+            σ = spectra[key].model.itp(spectra[molecule].grid, p, T, vmr_H2O)
+
+        else
+            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
+        end
+
+    τ += x[molecule] * σ
     end
     return exp.(-τ)
 end
@@ -42,7 +70,7 @@ end
 
 
 """calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false)                                
+function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false, sza=0.0)                                
     
 
 
@@ -51,17 +79,36 @@ function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Ve
     molecules = collect(keys(spectra))
     FT = dicttype(xₐ)
     τ = zeros(FT, length(spectra[molecules[1]].grid))
+    amf = 1.0/cosd(sza)
     
     for i = 1:n_levels
         for molecule in molecules
             σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p[i], T[i])
+            τ += vcd[i]*xₐ[molecule][i]*σ*amf
+        end
+    end
+    
+    return exp.(-τ)
+end
+
+
+"""calculate transmission in a profile with multiple layers"""
+function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}, spectral_grid::AbstractArray; input_is_column=false)                                
+
+    n_levels = length(p)
+    vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
+    molecules = collect(keys(spectra))
+    FT = dicttype(xₐ)
+    τ = zeros(FT, length(spectral_grid))
+    
+    for i = 1:n_levels
+        for molecule in molecules
+            σ = absorption_cross_section(spectra[molecule].model, spectral_grid, p[i], T[i])
             τ += vcd[i]*xₐ[molecule][i]*σ
         end
     end
     return exp.(-τ)
 end
-
-
 
 
 """
@@ -179,16 +226,23 @@ f::Function: the forward model called as f(x::Vector)
         spectra_grid = spectra[x_fields[1]].grid
         len_spectra = length(spectra_grid)
         len_measurement = length(measurement.grid)
+        use_OCO_table = check_param(inversion_setup, "use_OCO_table")
+        adjust_ch4_broadening = check_param(inversion_setup, "adjust_ch4_broadening")
+        fit_column = check_param(inversion_setup, "fit_column")
+
+
+
                 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
 
         # apply Beer's Law
-        if haskey(inversion_setup, "fit_column") && inversion_setup["fit_column"] == true
-            transmission = calculate_transmission(x, spectra, len_spectra, p=p, T=T)
-        else
-            transmission = calculate_transmission(x, measurement.pathlength, spectra, len_spectra, p=p, T=T)
-        end
+        transmission = calculate_transmission(x, spectra, measurement.pathlength, len_spectra,
+                                              p=p, T=T, fit_column=fit_column,
+                                              use_OCO_table=use_OCO_table, adjust_ch4_broadening=adjust_ch4_broadening)
+
+
+
 
         # down-sample to instrument grid
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
@@ -224,8 +278,9 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
                 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
+    sza = haskey(inversion_setup, "sza") ? inversion_setup["sza"] : 0.0
         
-        transmission = calculate_transmission(x, spectra, p, T, input_is_column=inversion_setup["fit_column"])
+        transmission = calculate_transmission(x, spectra, p, T, input_is_column=inversion_setup["fit_column"], sza=sza)
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
@@ -237,6 +292,57 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
         end
             
         return intensity 
+    end
+    return f
+end
+
+
+
+function generate_lhr_model(xₐ::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, spectral_windows, inversion_setup::AbstractDict)
+    x_fields = collect(keys(xₐ))
+    num_levels = length(xₐ[x_fields[1]])
+    
+    
+    function f(x)
+
+        if typeof(x) <: Array
+            FT = eltype(x)
+            x = assemble_state_vector!(x, x_fields, num_levels, inversion_setup)
+        else
+            FT = eltype(x[x_fields[1]])
+        end
+                
+        p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
+        T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
+	degree_ind = 1
+	out::Vector{FT} = []
+
+        for (i, spectral_window) in enumerate(spectral_windows)
+
+            measurement_grid = find_measurement_grid(spectral_window, measurement.grid)
+	    δν = measurement_grid[2] - measurement_grid[1]
+            spectral_grid = spectral_window[1]-1.0:δν/2:spectral_window[end]+1.0
+            len_spectra = length(spectral_grid)
+            len_measurement = length(measurement_grid)
+                poly_degree = inversion_setup["poly_degree"][i]
+		shape_params = x["shape_parameters"][degree_ind:degree_ind+poly_degree-1]
+                degree_ine = degree_ind + poly_degree
+		
+
+            transmission = calculate_transmission(x, spectra, p, T, spectral_grid, input_is_column=inversion_setup["fit_column"])
+            intensity = apply_instrument(spectral_grid, transmission, measurement_grid)
+
+            # calculate lgendre polynomial coefficients and fit baseline
+            if inversion_setup["linear"]
+                intensity = log.(intensity)
+                intensity .+= calc_polynomial_term(poly_degree, shape_params, len_measurement)
+            else
+                intensity .*= calc_polynomial_term(poly_degree, shape_params, len_measurement)
+            end
+	    out = append!(out, intensity)
+        end # for loop over windows
+            # append intensity into a new array here 
+        return out
     end
     return f
 end

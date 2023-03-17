@@ -1,10 +1,18 @@
 using RecursiveArrayTools, Polynomials
 
-"""Finds the indexes given values ν_min:ν_max"""
-function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{Float64,1})
+
+function find_indexes(ν_min::Real, ν_max::Real, ν_grid::Array{<:Real,1})
     
     indexes = findall(x-> ν_min<x<ν_max, ν_grid)
     return indexes
+end #function find_indexes
+
+
+"""Finds the indexes given values ν_min:ν_max and returns the grid at those values """
+function find_measurement_grid(spectral_window, ν_grid::Array{<:Real,1})
+    
+    indexes = findall(x-> spectral_window[1]<x<spectral_window[end], ν_grid)
+    return ν_grid[indexes]
 end #function find_indexes
 
 """Calculate the vertical column density given pressure and temperature"""
@@ -93,19 +101,19 @@ function assemble_state_vector!(x::AbstractDict)
     return out
 end #function assemble_state_vector!
 
-"""Convert the state vecotr{Array} to a Dict"""
+"""Convert the state vector{Array} to a Dict"""
 function assemble_state_vector!(x::Vector{FT}, key_vector, inversion_setup::AbstractDict) where FT <: Real
 
     out::OrderedDict{String, Union{FT, Vector{FT}}} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
-    out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
+    out = push!(out, "shape_parameters" => x[end-sum(inversion_setup["poly_degree"])+1:end])
     return out
 end #function assemble_state_vector!
 
 
-"""Convert the state vecotr{Array} to a Dict"""
+"""Convert the state vector{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
     out = OrderedDict{String, Vector{FT}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1)
-    out = push!(out, "shape_parameters" => x[end-inversion_setup["poly_degree"]+1:end])
+    out = push!(out, "shape_parameters" => x[end-sum(inversion_setup["poly_degree"])+1:end])
     return out
 end
 
@@ -252,3 +260,26 @@ function find_mask(spectral_grid::Vector{<:Real}, # spectral grid
     vcat(all...)
 end
     
+
+function make_shape_params(measurement, spectral_windows, inversion_setup)
+    shape_params::Vector{Float64} = []
+    for (i, window) in enumerate(spectral_windows)
+        degree = inversion_setup["poly_degree"][i]
+
+        inds = findall(x-> window[1]<x<=window[end], measurement.grid) # find the indexes in the window
+        shape_params_window = [maximum(measurement.intensity[inds]); zeros(degree-1)]
+        append!(shape_params, shape_params_window)
+    end
+
+    return shape_params
+end
+
+function check_param(inversion_setup, param)
+    if haskey(inversion_setup, param)
+        return inversion_setup[param]
+    else
+        return false
+    end
+end
+
+
