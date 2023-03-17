@@ -25,7 +25,6 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
 
     if fit_column
         vmr_H2O = H2O / (vcd_wet - H2O)
-        @show vmr_H2O
         vcd_dry = 1.0
     else
         vmr_H2O = x["H2O"]
@@ -36,11 +35,7 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
     for molecule in keys(spectra)
  
         if spectra[molecule].molecule_num == 6 && adjust_ch4_broadening
-        println("adjusting CH4 pressure")
-
             p_adjusted = p*(1+0.34*vmr_H2O)
-        @show p
-        @show p_adjusted 
             σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
 
         elseif spectra[molecule].molecule_num == 2 && use_OCO_table
