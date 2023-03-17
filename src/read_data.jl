@@ -102,7 +102,7 @@ function take_time_average!(dataset::FrequencyCombDataset; δt::Period=Dates.Hou
         averaged_measurements[i,:] = mean(dataset.intensity[indexes, :], dims=1)
         averaged_temperature[i] = mean(dataset.temperature[indexes])
         averaged_pressure[i] = mean(dataset.pressure[indexes])
-        averaged_σ²[i] = 1/n * mean(dataset.σ²[indexes])
+        averaged_σ²[i] = 1/n^2 * sum(dataset.σ²[indexes])
         num_averaged_measurements[i] = n
         averaging_times[i] = dataset.time[indexes[1]]
         machine_time[i] = dataset.machine_time[indexes[1]]

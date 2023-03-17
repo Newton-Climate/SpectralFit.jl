@@ -106,6 +106,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     
     # begin the non-linear fit
      while i <= max_iter && δᵢ>tolerence
+    @show  xᵢ[2]
 
         # evaluate the model and jacobian
         
@@ -118,14 +119,16 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
              x_old = copy(xᵢ)
              fᵢ, kᵢ[:,:] = result.value, result.derivs[1]
          catch error
-             #println(error.msg)
+            showerror(stdout, error)
+
              println(" jacobian and forward model calculation has failed")
              return failed_inversion(x₀, measurement)
          end
          
 
         # Gauss-Newton Algorithm
-         xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ);
+         xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ)
+
 
         #evaluate relative difference between this and previous iteration 
          δᵢ = abs((norm( fᵢ .- y) .- norm(f_old .- y)) ./ norm(f_old .- y));
@@ -191,7 +194,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     
     num_levels = length(measurement.pressure)
     
-    tolerence = 1.0e-3; # relative error reached to stop loop
+    tolerence = 1.0e-6; # relative error reached to stop loop
 
     #regularization parameter 
     if haskey(inversion_setup, "γ")
@@ -215,12 +218,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # begin the non-linear fit
     while i <= max_iter && δᵢ>tolerence
-
-        # evaluate the model and jacobian 
-        result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
-        ForwardDiff.jacobian!(result, f, xᵢ);
-        fᵢ, Kᵢ = result.value, result.derivs[1]
-        x_old = xᵢ
+        @show  xᵢ[1]
 
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)
@@ -301,8 +299,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
     xᵢ = copy(xₐ); # current state vector 
     
     num_levels = length(measurement.pressure)   
-    tolerence = 1.0e-4; # relative error reached to stop loop
-    max_iter = linear ? 10 : 30
+    tolerence = 1.0e-6; # relative error reached to stop loop
+    max_iter = linear ? 5 : 5
     
     #regularization parameter 
     if haskey(inversion_setup, "γ")
@@ -370,7 +368,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
             δᵢ = 1.0
         end
 
-        if 0.95 < χ² < 1.05; break; end
+        #if 0.95 < χ² < 1.05; break; end
        
          i += 1
         δ_old = δᵢ
