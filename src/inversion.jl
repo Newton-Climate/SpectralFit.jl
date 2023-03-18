@@ -106,7 +106,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     
     # begin the non-linear fit
      while i <= max_iter && δᵢ>tolerence
-    @show  xᵢ[2]
+
 
         # evaluate the model and jacobian
         
@@ -393,12 +393,10 @@ function fit_spectra(measurement_num::Integer, f::Function, xₐ::AbstractDict, 
     f = generate_forward_model(xₐ, measurement, spectra, inversion_setup)
     results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
-    catch e
+    catch error
+            showerror(stdout, error)
         println("Inversion for measurement ", measurement_num, " has failed.")
-        rethrow(e)
-        failed_inversion(xₐ, measurement)
-    end    
-    return results
+        return failed_inversion(xₐ, measurement)
 end
 
 
