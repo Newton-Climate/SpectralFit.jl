@@ -40,7 +40,7 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
 
         elseif spectra[molecule].molecule_num == 2 && use_OCO_table
             println("using CO2 tables")
-            σ = spectra[key].model.itp(spectra[molecule].grid, p, T, vmr_H2O)
+            σ = spectra[molecule].model.itp(spectra[molecule].grid, p, T, vmr_H2O)
 
         else
             σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
