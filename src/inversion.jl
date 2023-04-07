@@ -394,9 +394,11 @@ function fit_spectra(measurement_num::Integer, f::Function, xₐ::AbstractDict, 
     results = try
         nonlinear_inversion(f, xₐ, measurement, spectra, inversion_setup)
     catch error
-            showerror(stdout, error)
+        showerror(stdout, error)
         println("Inversion for measurement ", measurement_num, " has failed.")
-        return failed_inversion(xₐ, measurement)
+        failed_inversion(xₐ, measurement)
+    end
+    return results 
 end
 
 
