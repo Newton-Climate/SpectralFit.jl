@@ -36,7 +36,7 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
  
         if spectra[molecule].molecule_num == 6 && adjust_ch4_broadening
             p_adjusted = p*(1+0.34*vmr_H2O)
-            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
+            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p_adjusted, T)
 
         elseif spectra[molecule].molecule_num == 2 && use_OCO_table
             println("using CO2 tables")
