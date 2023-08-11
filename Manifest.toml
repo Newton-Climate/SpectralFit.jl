@@ -581,9 +581,9 @@ version = "4.13.0"
 
 [[deps.LLVMExtra_jll]]
 deps = ["Artifacts", "JLLWrappers", "LazyArtifacts", "Libdl", "Pkg", "TOML"]
-git-tree-sha1 = "771bfe376249626d3ca12bcd58ba243d3f961576"
+git-tree-sha1 = "7718cf44439c676bc0ec66a87099f41015a522d6"
 uuid = "dad2f222-ce93-54a1-a47d-0025e8a3acab"
-version = "0.0.16+0"
+version = "0.0.16+2"
 
 [[deps.LaTeXStrings]]
 git-tree-sha1 = "f2355693d6778a178ade15952b7ac47a4ff97996"
@@ -639,9 +639,9 @@ uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 
 [[deps.Libiconv_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "42b62845d70a619f063a7da093d995ec8e15e778"
+git-tree-sha1 = "c7cb1f5d892775ba13767a87c7ada0b980ea0a71"
 uuid = "94ce4f54-9a6c-5748-9c1c-f9c7231a4531"
-version = "1.16.1+1"
+version = "1.16.1+2"
 
 [[deps.LineSearches]]
 deps = ["LinearAlgebra", "NLSolversBase", "NaNMath", "Parameters", "Printf"]
@@ -1253,9 +1253,7 @@ deps = ["Artifacts", "Libdl"]
 uuid = "3f19e933-33d8-53b3-aaab-bd5110c3b7a0"
 
 [[deps.vSmartMOM]]
-deps = ["CUDA", "CUDAKernels", "DataInterpolations", "DelimitedFiles", "DiffResults", "Distributions", "DocStringExtensions", "FastGaussQuadrature", "ForwardDiff", "InstrumentOperator", "Interpolations", "JLD2", "JSON", "KernelAbstractions", "LinearAlgebra", "NCDatasets", "NNlib", "NetCDF", "NetCDF_jll", "Parameters", "Pkg", "Polynomials", "ProgressMeter", "SpecialFunctions", "StaticArrays", "StatsBase", "TimerOutputs", "YAML"]
-git-tree-sha1 = "859c06614b32a6ef56d6b0d5e6c128a5d8ea33af"
-repo-rev = "main"
-repo-url = "vSmartMOM.jl"
+deps = ["CUDA", "CUDAKernels", "DataInterpolations", "DelimitedFiles", "DiffResults", "Distributions", "DocStringExtensions", "FastGaussQuadrature", "ForwardDiff", "InstrumentOperator", "Interpolations", "JLD2", "JSON", "KernelAbstractions", "LinearAlgebra", "NCDatasets", "NNlib", "NetCDF", "Parameters", "Pkg", "Polynomials", "ProgressMeter", "SpecialFunctions", "StaticArrays", "StatsBase", "TimerOutputs", "YAML"]
+git-tree-sha1 = "2f34304e53f56b9f678a843b250860187772f2b7"
 uuid = "7ba11eeb-0a61-4a04-a413-bf612cc2007e"
 version = "0.5.0"
