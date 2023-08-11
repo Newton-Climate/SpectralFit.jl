@@ -35,6 +35,7 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
     for molecule in keys(spectra)
  
         if spectra[molecule].molecule_num == 6 && adjust_ch4_broadening
+        println("adjusting CH4 pressure")
             p_adjusted = p*(1+0.34*vmr_H2O)
             σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p_adjusted, T)
 
@@ -113,9 +114,9 @@ function apply_instrument( input_spectral_grid::AbstractArray{<:Real},
                                input_spectra::AbstractArray{<:Real},
                            output_spectral_grid::AbstractArray{<:Real})
     
-    itp = interpolate(input_spectra, BSpline(Quadratic(Line(OnGrid()))))
-    #itp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
-    sitp = scale(itp, input_spectral_grid)
+    #itp = interpolate(input_spectra, BSpline(Quadratic(Line(OnGrid()))))
+    sitp = interpolate(input_spectra, BSpline(Cubic(Line(OnGrid()))))
+    #sitp = scale(itp, input_spectral_grid)
     return sitp(output_spectral_grid)
 end # end of function apply_instrument
 
@@ -267,13 +268,16 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
             x = assemble_state_vector!(x, x_fields, num_levels, inversion_setup)
         end
 
-                spectra_grid = spectra[x_fields[1]].grid
+
+        
+        shift = haskey(x, "shift") ? x["shift"] : 1.0
+                spectra_grid = shift .* spectra[x_fields[1]].grid
         len_spectra = length(spectra_grid)
         len_measurement = length(measurement.grid)
                 
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
-    sza = haskey(inversion_setup, "sza") ? inversion_setup["sza"] : 0.0
+        sza = haskey(inversion_setup, "sza") ? inversion_setup["sza"] : 0.0
         
         transmission = calculate_transmission(x, spectra, p, T, input_is_column=inversion_setup["fit_column"], sza=sza)
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
@@ -307,6 +311,7 @@ function generate_lhr_model(xₐ::AbstractDict, measurement::AbstractMeasurement
             FT = eltype(x[x_fields[1]])
         end
                 
+        shift = haskey(x, "shift") ? x["shift"] : 1.0
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
 	degree_ind = 1

@@ -171,7 +171,7 @@ function calc_χ²(result::InversionResults)
     return χ²
 end
 
-function calc_DCS_noise(data::FrequencyCombDataset)
+ function calc_DCS_noise(data::FrequencyCombDataset)
 
     # select spectrally flat region 
     ν_min, ν_max = 6255.1, 6255.4
@@ -215,7 +215,7 @@ function calc_DCS_noise(data::FrequencyCombDataset)
 end
 
 
-function calc_DCS_noise(grid::Array{Float64,1}, intensity::Array{Float64,2})
+ function calc_DCS_noise(grid::Array{Float64,1}, intensity::Array{Float64,2})
 
     signal_total = mean(intensity, dims=2);
 
