@@ -85,7 +85,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
     else
         if verbose; println("default covariance"); end
-        Sₑ⁻¹ = make_obs_error(measurement, linear=linear)
+        Sₑ⁻¹ = make_obs_error(measurement, linear=false)
     end
     
     y = measurement.intensity;
@@ -128,6 +128,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
 
         # Gauss-Newton Algorithm
          xᵢ[:] = xᵢ + inv(kᵢ'* Sₑ⁻¹ *kᵢ)*kᵢ'* Sₑ⁻¹ *(y - fᵢ)
+         @show xᵢ[2]
 
 
         #evaluate relative difference between this and previous iteration 
@@ -150,7 +151,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     # Calculate χ²
     χ² = (y-fᵢ)'* Sₑ⁻¹ *(y-fᵢ)/(length(fᵢ)-length(xᵢ))
     S = inv(kᵢ'*Sₑ⁻¹*kᵢ); # posterior error covariance
-
+     @show xᵢ
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), inversion_setup)
     return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
                               x=x,
@@ -205,11 +206,23 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
     δᵢ, δ_old = 15.0, 20.0; # relative errror
     χ²_old = 0.001
     i = 1; # iteration count
-    max_iter = 10
+    max_iter = 30
 
     # allocate memory for inversion matrixes
     y = measurement.intensity; # obserbations 
-    Kᵢ = zeros((length(measurement.grid), length(xᵢ))) # jacobian
+#    Kᵢ = zeros((length(measurement.grid), length(xᵢ))) # jacobian
+    #q: how do I precompile the jacobian of the forward model so that it runs faster and doesn't have to recopile every time in the while loop?
+    #a: use the ForwardDiff.jacobian!() function to precompile the jacobian
+    #q: do I do that before the while loop?
+    #a: yes
+    #q: how do I do that?
+    #a: see below
+    result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
+    Kᵢ = zeros((length(measurement.grid), length(xᵢ)))
+    # ForwardDiff.jacobian!(result, f, xᵢ)
+    # fᵢ, Kᵢ = result.value, result.derivs[1]
+    
+
     f_old = similar(y) # previous model-run 
     fᵢ = similar(y) # current model-run
     m, n = length(y), length(xᵢ)
@@ -217,8 +230,14 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # begin the non-linear fit
     while i <= max_iter && δᵢ>tolerence
-        @show  xᵢ[1]
-
+        @show  xᵢ[2]
+        # evaluate the model and jacobian
+        # DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
+        
+        ForwardDiff.jacobian!(result, f, xᵢ);
+        fᵢ, Kᵢ = result.value, result.derivs[1]
+        x_old = copy(xᵢ)
+        
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)
         lhs = (Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹ + γ*Sₐ⁻¹)
@@ -227,9 +246,10 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
         xᵢ = xᵢ + Δx; # reassign state vector for next iteration
 
         #evaluate relative difference between this and previous iteration 
+        fᵢ = f(xᵢ)
         δᵢ = abs((norm( fᵢ - y) - norm(f_old - y)) / norm(f_old - y));
          χ² = (y-fᵢ)'* Sₒ⁻¹ *(y-fᵢ)/degrees 
-         #δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
+         # δᵢ = abs(norm( x_old .- xᵢ) ./ norm(x_old));
          if inversion_setup["verbose_mode"]
              println("δᵢ for iteration ",i," is ",δᵢ)
              @show χ²
@@ -248,7 +268,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
        
          i += 1
-        f_old, δ_old = fᵢ, δᵢ
+        δ_old = δᵢ
         χ²_old = χ²
 #        δᵢ > 1.0 ? xᵢ = xₐ : continue
     end #while loop
@@ -327,7 +347,7 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         result = DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
         ForwardDiff.jacobian!(result, f, xᵢ);
         fᵢ, Kᵢ = result.value, result.derivs[1]
-        j_old = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
+        j_old = (y - fᵢ)'*Sₒ⁻¹*(y - fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
         x_old, f_old = xᵢ, fᵢ
         if linear
             measurement.intensity = fᵢ;
@@ -339,18 +359,20 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         rhs = (Kᵢ'*Sₒ⁻¹ * (y - fᵢ) - Sₐ⁻¹*(xᵢ - xₐ))
         δx = lhs\rhs
         xᵢ = xᵢ + δx; # reassign state vector for next iteration
+        @show xᵢ[2]
+        @show xᵢ[3]
 
         ## evaluate linearity of this step
         fᵢ = f(xᵢ)
         j_new = (y-fᵢ)'* Sₒ⁻¹ *(y-fᵢ) + (xₐ - xᵢ)'*Sₐ⁻¹*(xₐ - xᵢ)
-        j_pred = (y - f_old - Kᵢ*δx)' *Sₒ⁻¹ *(y-f_old - Kᵢ*δx) + (xₐ - xᵢ - δx)'*Sₐ⁻¹*(xₐ - xᵢ - δx)
+        j_pred = (y - f_old - Kᵢ*δx)' * Sₒ⁻¹ * (y - f_old - Kᵢ * δx) + (xₐ - xᵢ - δx)'*Sₐ⁻¹ * (xₐ - xᵢ - δx)
         r = (j_new - j_old) / (j_pred - j_old)
         
         # If not close to linear, then increase γ and step-size
         if r > 0.75
             γ = γ / 2.0
         elseif r < 0.25
-            γ = γ <= 0 ? 1.0 : γ*10.0
+            γ = γ <= 0 ? 1.0 : γ * 2.0
         end
         @show γ
         @show r

@@ -103,9 +103,17 @@ end #function assemble_state_vector!
 
 """Convert the state vector{Array} to a Dict"""
 function assemble_state_vector!(x::Vector{FT}, key_vector, inversion_setup::AbstractDict) where FT <: Real
+    # if the shape_parameters key is in key_vector, then add it to the output dict
+    if "shape_parameters" in key_vector
+        degree = inversion_setup["poly_degree"]
+        poly_start = length(x) - degree + 1
 
-    out::OrderedDict{String, Union{FT, Vector{FT}}} = OrderedDict([key_vector[i] => x[i] for i=1:length(key_vector)-1])
-    out = push!(out, "shape_parameters" => x[end-sum(inversion_setup["poly_degree"])+1:end])
+        out = OrderedDict{String, Union{FT, Vector{FT}}}(key_vector[i] => x[i] for i=1:length(key_vector)-1)
+        out["shape_parameters"] = x[poly_start:end]
+    else
+        out = OrderedDict{String, Union{FT, Vector{FT}}}(key_vector[i] => x[i] for i=1:length(key_vector))
+    end
+
     return out
 end #function assemble_state_vector!
 
@@ -113,14 +121,26 @@ end #function assemble_state_vector!
 """Convert the state vector{Array} to a Dict"""
 function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_levels::Integer, inversion_setup::AbstractDict) where FT<:Real
 
-    poly_ind = length(x) - sum(inversion_setup["poly_degree"])+1
-    if "shift" in fields
-        out = OrderedDict{String, Union{FT, Vector{FT}}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-2)
-        out = push!(out, ("shift" => x[poly_ind-1]))
-    else
-        out = OrderedDict{String, Union{FT, Vector{FT}}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1)
+    # apply the other assemble state vector method if there is only one level
+    if num_levels == 1
+        return assemble_state_vector!(x, fields, inversion_setup)
     end
-    out = push!(out, "shape_parameters" => x[poly_ind:end])
+    
+    # Determine poly_ind based on the presence and value of poly_degree
+    poly_ind = if "poly_degree" in keys(inversion_setup)
+        length(x) - sum(inversion_setup["poly_degree"]) + 1
+    else
+        length(x)
+    end
+
+    # Assemble the state vector
+if "shape_parameters" in keys(inversion_setup)
+        out = OrderedDict{String, Union{FT, Vector{FT}}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1)
+        out = push!(out, "shape_parameters" => x[poly_ind:end])
+    else
+        out = OrderedDict{String, Union{FT, Vector{FT}}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields))
+    end
+
     return out
 end
 
