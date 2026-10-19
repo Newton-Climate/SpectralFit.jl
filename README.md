@@ -13,6 +13,18 @@ using SpectralFits
 ## Example Run
 Please see the example_run.jl script for how to run the code
 
+## Running the tests
+The package targets Julia 1.10+ (developed on 1.12). From the repository root:
+
+```
+julia --project=. -e 'using Pkg; Pkg.test()'
+```
+
+Unit tests cover `src/utils.jl`, `src/read_data.jl` and `src/spectroscopy.jl`; integration tests
+simulate spectra with the forward model and check that the retrievals (single-layer, profile,
+multi-window, and the full HDF5 → JLD2 pipeline) recover the true state. They use the small
+HITRAN 2020 subset in `test/data/hit20_subset.par`, so no external line lists are needed.
+
 ## Features
  Users can customize forward model for radiation and instrument simulations
 - Applies Bayesian Maximum Likely-hood Estimation with custom priors and regularization hyper-parameters

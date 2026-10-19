@@ -326,7 +326,7 @@ function generate_lhr_model(xₐ::AbstractDict, measurement::AbstractMeasurement
             len_measurement = length(measurement_grid)
                 poly_degree = inversion_setup["poly_degree"][i]
 		shape_params = x["shape_parameters"][degree_ind:degree_ind+poly_degree-1]
-                degree_ine = degree_ind + poly_degree
+                degree_ind = degree_ind + poly_degree
 		
 
             transmission = calculate_transmission(x, spectra, p, T, spectral_grid, input_is_column=inversion_setup["fit_column"])

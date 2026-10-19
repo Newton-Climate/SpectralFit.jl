@@ -25,7 +25,7 @@ include("inversion.jl") # functions for retrieving and fitting
 
 ### export our structs and types
 # spectral-related types 
-export MolecularMetaData, Molecule, Spectra, OrderedDict
+export MolecularMetaData, Molecule, OrderedDict
 export AbstractResults, InversionResults, FailedInversion
 export setup_molecules
 
@@ -48,7 +48,7 @@ export construct_spectra_by_layer, construct_spectra_by_layer!
 export read_DCS_data, take_time_average!, get_measurement
 
 # forward model functions
-export calc_transmission!, apply_instrument, calc_polynomial_term
+export apply_instrument, calc_polynomial_term
 export generate_forward_model, generate_profile_model
 
 
