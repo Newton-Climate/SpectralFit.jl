@@ -3,7 +3,7 @@
 function read_DCS_data(filename::String)
 
     file = HDF5.h5open(filename, "r")
-    ds_obj = read(file)
+    ds_obj = file   # haskey works on the open file, so the whole file is not read into memory
     if haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "totaltime_priorfit")
         datafields = ["pressure_evolution", "temperature_fitted_l", "totaltime_priorfit", "frequency_Hz", "WaveToFitROI_1600a"];
     elseif haskey(ds_obj, "pressure_evolution") && haskey(ds_obj, "TotalTime")

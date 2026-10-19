@@ -230,13 +230,14 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # begin the non-linear fit
     while i <= max_iter && δᵢ>tolerence
-        @show  xᵢ[2]
+        if verbose; @show xᵢ[2]; end
         # evaluate the model and jacobian
         # DiffResults.JacobianResult(zeros(length(collect(measurement.grid))), xᵢ);
-        
+
         ForwardDiff.jacobian!(result, f, xᵢ);
         fᵢ, Kᵢ = result.value, result.derivs[1]
         x_old = copy(xᵢ)
+        f_old = copy(fᵢ) # model at the state before this step, for the convergence test
         
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)

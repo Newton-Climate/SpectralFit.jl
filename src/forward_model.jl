@@ -16,7 +16,8 @@
 transmission::Vector: the calculated tranmission
 """
 function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathlength::Real, grid_length::Int; 
-                                p::Real=1000, T::Real=290, use_OCO_table=false, adjust_ch4_broadening=false, fit_column=false)
+                                p::Real=1000, T::Real=290, use_OCO_table=false, adjust_ch4_broadening=false, fit_column=false,
+                                σ_cache=nothing)
 
     FT = dicttype(x)
     τ = zeros(FT, grid_length)
@@ -43,11 +44,14 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
             println("using CO2 tables")
             σ = spectra[molecule].model.itp(spectra[molecule].grid, p, T, vmr_H2O)
 
-        else
+        elseif σ_cache === nothing
             σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
+        else
+            # p and T are fixed, so the cross-section is the same on every call
+            σ = get!(() -> absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T), σ_cache, molecule)
         end
 
-    τ += x[molecule] * σ
+        τ .+= x[molecule] .* σ
     end
     return exp.(-τ)
 end
@@ -59,32 +63,34 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, grid_len
     
     for molecule in keys(spectra)
         σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T)
-    τ += x[molecule] * σ
+        τ .+= x[molecule] .* σ
     end
     return exp.(-τ)
 end
 
 
-"""calculate transmission in a profile with multiple layers"""
-function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false, sza=0.0)                                
-    
-
-
-    n_levels = length(p)
-    vcd = input_is_column ? ones(n_levels) : make_vcd_profile(p, T)
-    molecules = collect(keys(spectra))
-    FT = dicttype(xₐ)
-    τ = zeros(FT, length(spectra[molecules[1]].grid))
+"""
+Optical-depth operator of each molecule in a layered atmosphere: a matrix (spectral grid × layer)
+whose column i is the cross-section at (p[i], T[i]) times the layer's column and the air-mass factor.
+The profile's optical depth is then τ = Σₘ A[m] * x[m].
+"""
+function layer_optical_depth_operators(spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false, sza=0.0)
+    vcd = input_is_column ? ones(length(p)) : make_vcd_profile(p, T)
     amf = 1.0/cosd(sza)
-    
-    for i = 1:n_levels
-        for molecule in molecules
-            σ = absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p[i], T[i])
-            τ += vcd[i]*xₐ[molecule][i]*σ*amf
-        end
-    end
-    
+    return OrderedDict(molecule => reduce(hcat, [(vcd[i]*amf) .* absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p[i], T[i])
+                                                 for i in eachindex(p)])
+                       for molecule in keys(spectra))
+end
+
+"""transmission of a layered atmosphere from the operators of layer_optical_depth_operators"""
+function calculate_transmission(xₐ::AbstractDict, A::AbstractDict{<:Any,<:AbstractMatrix})
+    τ = sum(A[molecule] * xₐ[molecule] for molecule in keys(A))
     return exp.(-τ)
+end
+
+"""calculate transmission in a profile with multiple layers"""
+function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Vector{<:Real}, T::Vector{<:Real}; input_is_column=false, sza=0.0)
+    return calculate_transmission(xₐ, layer_optical_depth_operators(spectra, p, T, input_is_column=input_is_column, sza=sza))
 end
 
 
@@ -100,7 +106,7 @@ function calculate_transmission(xₐ::AbstractDict, spectra::AbstractDict, p::Ve
     for i = 1:n_levels
         for molecule in molecules
             σ = absorption_cross_section(spectra[molecule].model, spectral_grid, p[i], T[i])
-            τ += vcd[i]*xₐ[molecule][i]*σ
+            τ .+= (vcd[i]*xₐ[molecule][i]) .* σ
         end
     end
     return exp.(-τ)
@@ -192,6 +198,31 @@ end
 
 
 
+"""
+Holds cross-sections computed for one set of atmospheric conditions. `cached!` returns the
+stored value while the key (copied p, T, ...) and the spectra's models are unchanged, and
+recomputes it otherwise, so a measurement or spectra edited after the model was built is
+still handled correctly.
+"""
+mutable struct CrossSectionCache
+    key::Any
+    models::Vector{Any}
+    value::Any
+    CrossSectionCache() = new(nothing, Any[], nothing)
+end
+
+function cached!(compute, cache::CrossSectionCache, key, spectra::AbstractDict)
+    models = Any[spectra[m].model for m in keys(spectra)]
+    if cache.value === nothing || !isequal(cache.key, key) || length(models) != length(cache.models) ||
+       !all(cache.models .=== models)
+        cache.value = compute()
+        cache.key = deepcopy(key)
+        cache.models = models
+    end
+    return cache.value
+end
+
+
 function generate_forward_model(x₀::AbstractDict, measurement::FrequencyCombMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     """
 - generates a forward model given the inversion parameters
@@ -212,7 +243,9 @@ f::Function: the forward model called as f(x::Vector)
 
     # Save the labelled fields in the state vector
     x_fields = collect(keys(x₀))
-    
+    # cross-sections are reused between calls while p and T are not fitted
+    cache = CrossSectionCache()
+
     function f(x)
         # convert the state vector to a dict with labelled fields
         if typeof(x) <: AbstractArray
@@ -232,9 +265,12 @@ f::Function: the forward model called as f(x::Vector)
         p = haskey(x, "pressure") ? x["pressure"] : measurement.pressure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
 
+        fixed_pT = !haskey(x, "pressure") && !haskey(x, "temperature")
+        σ_cache = fixed_pT ? cached!(() -> Dict{String,Vector{Float64}}(), cache, (p, T), spectra) : nothing
+
         # apply Beer's Law
         transmission = calculate_transmission(x, spectra, measurement.pathlength, len_spectra,
-                                              p=p, T=T, fit_column=fit_column,
+                                              p=p, T=T, fit_column=fit_column, σ_cache=σ_cache,
                                               use_OCO_table=use_OCO_table, adjust_ch4_broadening=adjust_ch4_broadening)
 
 
@@ -260,8 +296,9 @@ end
 function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::AbstractDict)
     x_fields = collect(keys(xₐ))
     num_levels = length(xₐ[x_fields[1]])
-    
-    
+    # per-layer cross-sections are computed once while p and T are not fitted
+    cache = CrossSectionCache()
+
     function f(x)
 
         if typeof(x) <: Array
@@ -269,7 +306,6 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
         end
 
 
-        
         shift = haskey(x, "shift") ? x["shift"] : 1.0
                 spectra_grid = shift .* spectra[x_fields[1]].grid
         len_spectra = length(spectra_grid)
@@ -279,7 +315,14 @@ function generate_profile_model(xₐ::AbstractDict, measurement::AbstractMeasure
         T = haskey(x, "temperature") ? x["temperature"] : measurement.temperature
         sza = haskey(inversion_setup, "sza") ? inversion_setup["sza"] : 0.0
         
-        transmission = calculate_transmission(x, spectra, p, T, input_is_column=inversion_setup["fit_column"], sza=sza)
+        input_is_column = inversion_setup["fit_column"]
+        if !haskey(x, "pressure") && !haskey(x, "temperature")
+            A = cached!(() -> layer_optical_depth_operators(spectra, p, T, input_is_column=input_is_column, sza=sza),
+                        cache, (p, T, input_is_column, sza), spectra)
+            transmission = calculate_transmission(x, A)
+        else
+            transmission = calculate_transmission(x, spectra, p, T, input_is_column=input_is_column, sza=sza)
+        end
         intensity = apply_instrument(spectra_grid, transmission, measurement.grid)
 
         # calculate lgendre polynomial coefficients and fit baseline
