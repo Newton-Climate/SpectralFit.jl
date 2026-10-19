@@ -38,13 +38,13 @@ end
 function calculate_cross_sections( filename::String, molec_num::Integer, iso_num::Integer; ν_min::Real=6000, ν_max::Real=6400, δν=0.01, p::Real=1001, T::Real=290, architecture=CPU())
 
     # retrieve the HiTran parameters 
-    hitran_table = CrossSection.read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
+    hitran_table = read_hitran(filename, mol=molec_num, iso=iso_num, ν_min=ν_min, ν_max=ν_max)
     model = make_hitran_model(hitran_table, Voigt(), architecture=architecture);
     grid = ν_min:δν:ν_max;
     cross_sections::Array{Float64,1} = absorption_cross_section(model, grid, p, T)
     
     # store results in the Molecule type
-    molecule = Molecule(cross_sections, grid, p, T, model)
+    molecule = Molecule(cross_sections=cross_sections, grid=grid, p=float(p), T=float(T), model=model)
     return molecule
 end #function calculate_cross_sections
 
@@ -81,7 +81,8 @@ function construct_spectra!(spectra::AbstractDict; p::Real=1001, T::Real=290)
     # iterate over species (key) and molecule(referenced object)
     for (species, molecule) in spectra
         spectra[species].cross_sections = absorption_cross_section(molecule.model, molecule.grid, p, T);
-    end    
+    end
+    return spectra
 end
 
 

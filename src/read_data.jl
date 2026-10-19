@@ -113,15 +113,17 @@ function take_time_average!(dataset::FrequencyCombDataset; δt::Period=Dates.Hou
 
     end # while loop
 
-    dataset.intensity= averaged_measurements
-                                    dataset.temperature=averaged_temperature
-    dataset.pressure=averaged_pressure
-    dataset.time=averaging_times
-    dataset.num_averaged_measurements=num_averaged_measurements
+    # drop the unfilled (uninitialized) slots left by skipped averaging windows
+    filled = 1:i-1
+    dataset.intensity= averaged_measurements[filled, :]
+    dataset.temperature=averaged_temperature[filled]
+    dataset.pressure=averaged_pressure[filled]
+    dataset.time=averaging_times[filled]
+    dataset.num_averaged_measurements=num_averaged_measurements[filled]
     dataset.averaging_window=δt
-    dataset.machine_time=machine_time
-    dataset.σ²=averaged_σ²
-    dataset.vcd=averaged_vcd
+    dataset.machine_time=machine_time[filled]
+    dataset.σ²=averaged_σ²[filled]
+    dataset.vcd=averaged_vcd[filled]
     return dataset
 end
 

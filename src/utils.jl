@@ -134,7 +134,7 @@ function assemble_state_vector!(x::Array{FT,1}, fields::AbstractArray, num_level
     end
 
     # Assemble the state vector
-if "shape_parameters" in keys(inversion_setup)
+if "shape_parameters" in fields
         out = OrderedDict{String, Union{FT, Vector{FT}}}(fields[i] => x[1+(i-1)*num_levels : i*num_levels] for i=1:length(fields)-1)
         out = push!(out, "shape_parameters" => x[poly_ind:end])
     else
