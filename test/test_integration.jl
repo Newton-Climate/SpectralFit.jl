@@ -132,6 +132,58 @@ end
           abs(sum(prob.xa["CH4"]) - sum(prob.x_true["CH4"]))
 end
 
+@testset "profile_inversion stops once the fit converges" begin
+    prob = profile_problem()
+    f = generate_profile_model(prob.xa, prob.meas, prob.spectra, prob.setup)
+    y = prob.meas.intensity
+    # each iteration evaluates the model once with plain Float64 input (after the step);
+    # record the residual norm of each of those evaluations
+    r = [norm(f(assemble_state_vector!(prob.xa)) - y)]
+    logged(x) = (fx = f(x); eltype(x) <: AbstractFloat && push!(r, norm(fx - y)); fx)
+    res = profile_inversion(logged, prob.xa, prob.meas, prob.spectra, prob.setup)
+
+    # relative change in the residual norm at each iteration, as used by the stopping test
+    δ = abs.(diff(r)) ./ r[1:end-1]
+    n_iter = length(δ)
+    @test 2 <= n_iter < 30                # 30 is max_iter
+    @test δ[end] <= 1e-6                  # it stopped because the fit converged ...
+    @test all(>(1e-6), δ[2:end-1])        # ... and not before
+    @test 0.5 < res.χ² < 1.5
+end
+
+@testset "cached cross-sections" begin
+    # the profile operators reproduce the layer-by-layer loop (still used by the LHR model)
+    prob = profile_problem()
+    fields = collect(keys(prob.xa))
+    x = assemble_state_vector!(prob.xa)
+    xd = SF.assemble_state_vector!(x, fields, 2, prob.setup)
+    p, T = prob.meas.pressure, prob.meas.temperature
+    col = prob.setup["fit_column"]
+    grid = prob.spectra[fields[1]].grid
+    A = SF.layer_optical_depth_operators(prob.spectra, p, T, input_is_column=col)
+    @test SF.calculate_transmission(xd, A) ≈ SF.calculate_transmission(xd, prob.spectra, p, T, grid, input_is_column=col)
+
+    # the profile model reuses its cache, and rebuilds it when the measurement's p or T change
+    f = generate_profile_model(prob.xa, prob.meas, prob.spectra, prob.setup)
+    y = f(x)
+    @test f(x) == y
+    prob.meas.pressure = 0.9 .* p
+    y_new = f(x)
+    @test !(y_new ≈ y)
+    @test y_new ≈ generate_profile_model(prob.xa, prob.meas, prob.spectra, prob.setup)(x)
+
+    # same for the single-layer model
+    x1 = gas_state(true_state())
+    meas, spectra = synthetic_measurement(x1; σ=0.0)
+    setup = column_setup()
+    g = generate_forward_model(x1, meas, spectra, setup)
+    y1 = g(x1)
+    @test g(x1) == y1
+    meas.temperature -= 10
+    @test !(g(x1) ≈ y1)
+    @test g(x1) ≈ generate_forward_model(x1, meas, spectra, setup)(x1)
+end
+
 @testset "multi-window (LHR) forward model" begin
     p, T = [850.0, 500.0], [290.0, 260.0]
     meas = make_measurement(zeros(length(MEAS_GRID)); p=p, T=T)
