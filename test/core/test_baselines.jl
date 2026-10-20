@@ -134,8 +134,8 @@ end
     @test idx == [4, 5, 6, 18, 19, 20, 21]
     @test SpectralFits.CoreLayer.find_mask(nu, [6076.25 6076.55; 6077.65 6078.5]) == idx
     @test isempty(SpectralFits.CoreLayer.find_mask(nu, [(7000.0, 7001.0)]))
-    # open intervals: a point on the window edge is not masked
-    @test SpectralFits.CoreLayer.find_mask(nu, [(6076.0, 6076.2)]) == [2]
+    # closed intervals: a point on the window edge is masked
+    @test SpectralFits.CoreLayer.find_mask(nu, [(6076.0, 6076.2)]) == [1, 2, 3]
     for space in (LinearSpace(), LogSpace())
         full = obs_precision(space, m).diag
         masked = obs_precision(space, m; masked_windows_cm = windows).diag

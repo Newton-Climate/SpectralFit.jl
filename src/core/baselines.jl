@@ -34,7 +34,7 @@ observation_vector(::LogSpace, m::Measurement) = log.(m.y)
 
 Inverse observation covariance (diagonal). `LinearSpace`: `1 / noise_variance`. `LogSpace`:
 `y^2 / noise_variance` by first-order propagation of the log, always from the stored linear
-`y`. Observations inside any open interval `(minimum_cm, maximum_cm)` of `masked_windows_cm`
+`y`. Observations inside any closed interval `[minimum_cm, maximum_cm]` of `masked_windows_cm`
 (in units of `measurement.coordinate`) are de-weighted by `mask_factor` (open question 8,
 the v0.1 behaviour).
 
@@ -63,9 +63,10 @@ end
 """
     find_mask(coordinate, masked_windows) -> Vector{Int}
 
-Indices of `coordinate` inside any open interval of `masked_windows`, given either as a
-collection of `(minimum, maximum)` pairs or as an n-by-2 matrix (v0.1 form). Same semantics
-as v0.1 `find_mask`: indices are concatenated per window. Internal.
+Indices of `coordinate` inside any closed interval of `masked_windows`, given either as a
+collection of `(minimum, maximum)` pairs or as an n-by-2 matrix (v0.1 form). As in v0.1
+`find_mask`, indices are concatenated per window, but edges are included (v0.1 excluded
+them). Internal.
 """
 function find_mask(coordinate::AbstractVector, masked_windows::AbstractMatrix)
     size(masked_windows, 2) == 2 ||
@@ -76,7 +77,7 @@ end
 function find_mask(coordinate::AbstractVector, masked_windows)
     indices = Int[]
     for (lo, hi) in masked_windows
-        append!(indices, findall(c -> lo < c < hi, coordinate))
+        append!(indices, findall(c -> lo <= c <= hi, coordinate))
     end
     return indices
 end

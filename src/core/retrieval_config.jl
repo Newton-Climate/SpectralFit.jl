@@ -6,7 +6,7 @@
 
 How core objects are assembled for one measurement. Fields (units in names):
 
-- `windows_cm::Vector{Tuple{Float64,Float64}}`: spectral windows, open intervals in cm-1.
+- `windows_cm::Vector{Tuple{Float64,Float64}}`: spectral windows, closed intervals in cm-1.
 - `baseline_coefficients::Vector{Int}`: Legendre coefficients per window (0 for none).
 - `baseline_mode`: `:multiplicative` (default) or `:additive`.
 - `measurement_space`: `LinearSpace()` (default) or `LogSpace()`.

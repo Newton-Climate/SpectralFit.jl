@@ -39,7 +39,8 @@ function write_batch_dcs_file(path, ch4_vmr; seed, noise_sigma = 1e-3, nan_recor
         nan_record === nothing || (pressure[nan_record] = NaN)
         f["Pres_CS"] = pressure
         f["Temp_CS"] = fill(15.0, n_records)
-        f["TotalTime"] = collect(datetime2unix(BATCH_T0) .+ 40.0 .* (0:n_records-1))
+        t0_s = Dates.value(BATCH_T0 - LABVIEW_EPOCH) / 1000       # LabVIEW machine time
+        f["TotalTime"] = collect(t0_s .+ 40.0 .* (0:n_records-1))
         f["frequency_Hz"] = BATCH_NU .* SPEED_OF_LIGHT_CM_PER_S
         f["WaveToFitROI_1600a"] = intensity
     end
@@ -49,6 +50,7 @@ end
 function batch_test_config(; kwargs...)
     defaults = (experiment = "synthetic-test",
                 reader = DCSReaderConfig(path_length_cm = 195017.0, pressure_scale = 1.0),
+                parallel = :serial,
                 noise = ConstantNoise(1e-6),
                 averaging_period = Minute(2),
                 absorbers = BATCH_ABSORBERS,
@@ -90,6 +92,14 @@ end
             x_prior = ComponentVector(CH4 = 1.0, pressure_hPa = 850.0, baseline = (window_1 = zeros(3),)),
             prior_sigma = ComponentVector(CH4 = 1.0, pressure_hPa = 1.0, baseline = (window_1 = ones(3),)))
         @test_throws r"parallel" batch_test_config(data_directory = dir, parallel = :threads)
+        @test_throws r"n_workers" batch_test_config(data_directory = dir, parallel = :processes,
+                                                    n_workers = 0)
+        defaults = BatchRetrievalConfig(experiment = "d", data_directory = dir,
+                                        averaging_period = Minute(2), absorbers = BATCH_ABSORBERS,
+                                        retrieval = batch_test_config(data_directory = dir).retrieval,
+                                        x_prior = batch_test_config(data_directory = dir).x_prior,
+                                        prior_sigma = batch_test_config(data_directory = dir).prior_sigma)
+        @test defaults.parallel === :processes && defaults.n_workers == 2
         @test_throws r"experiment" batch_test_config(data_directory = dir, experiment = "a/b")
     end
 end
@@ -161,15 +171,15 @@ end
             end
         end
 
-        # the same run on two worker processes gives identical results
-        new_workers = addprocs(2; exeflags = "--project=$(Base.active_project())")
-        try
-            Distributed.remotecall_eval(Main, new_workers, :(using SpectralFits))   # @everywhere
-            @test nworkers() == 2
+        # the same run on two worker processes (started and removed by run) gives identical results
+        @test nprocs() == 1
+        let
             parallel = with_logger(NullLogger()) do
                 BR.run(batch_test_config(data_directory = data, output_root = output_root,
-                                         parallel = :processes))
+                                         parallel = :processes, n_workers = 2))
             end
+            @test nprocs() == 1
+            @test TOML.parsefile(joinpath(parallel.run_folder, "manifest.toml"))["n_workers"] == 2
             @test parallel.run_folder != folder
             @test [(o.status, o.index, o.time) for o in parallel.outcomes] ==
                   [(o.status, o.index, o.time) for o in summary.outcomes]
@@ -182,8 +192,6 @@ end
                     @test rs.chi2_obs_per_dof == rp.chi2_obs_per_dof
                 end
             end
-        finally
-            rmprocs(new_workers)
         end
     end
 end

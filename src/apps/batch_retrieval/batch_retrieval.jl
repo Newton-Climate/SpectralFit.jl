@@ -88,8 +88,23 @@ end
 function _retrieve_all(config::BatchRetrievalConfig, measurements::Vector{<:Measurement})
     task = m -> retrieve_measurement(config, m)
     config.parallel === :serial && return map(task, measurements)
-    nprocs() > 1 || @warn "parallel = :processes but no worker processes; running on process 1"
-    return pmap(task, CachingPool(workers()), measurements)
+    added = _add_workers(config.n_workers)
+    try
+        pool = CachingPool(workers()[1:config.n_workers])
+        return pmap(task, pool, measurements)
+    finally
+        isempty(added) || rmprocs(added)
+    end
+end
+
+# Start the worker processes missing from `n_workers` (same project, SpectralFits loaded);
+# returns the ids of the ones started.
+function _add_workers(n_workers::Integer)
+    n_existing = nprocs() == 1 ? 0 : nworkers()
+    n_existing >= n_workers && return Int[]
+    added = addprocs(n_workers - n_existing; exeflags = "--project=$(Base.active_project())")
+    Distributed.remotecall_eval(Main, added, :(using SpectralFits))
+    return added
 end
 
 # ---------------------------------------------------------------- run folder and manifest
@@ -145,7 +160,7 @@ function _write_manifest(path, summary::BatchRetrievalSummary, config, git_hash)
         "start_time" => string(summary.start_time),
         "end_time" => string(summary.end_time),
         "parallel" => string(config.parallel),
-        "n_workers" => config.parallel === :serial ? 1 : nworkers(),
+        "n_workers" => config.parallel === :serial ? 1 : config.n_workers,
         "averaging_period" => string(config.averaging_period),
         "n_files_processed" => length(summary.files_processed),
         "n_files_skipped" => length(summary.files_skipped),

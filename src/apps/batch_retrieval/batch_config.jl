@@ -6,7 +6,7 @@
     BatchRetrievalConfig(; experiment, data_files = nothing, data_directory = nothing,
                          file_pattern = r"\\.h5\$", reader = DCSReaderConfig(), noise = nothing,
                          averaging_period, absorbers, retrieval, x_prior, prior_sigma,
-                         output_root = "runs", parallel = :serial)
+                         output_root = "runs", parallel = :processes, n_workers = 2)
 
 Settings for `BatchRetrieval.run`. Fields:
 
@@ -29,8 +29,11 @@ Settings for `BatchRetrieval.run`. Fields:
   serves the whole batch (baseline entries come from each measurement when
   `retrieval.baseline_prior = :from_measurement`).
 - `output_root::String`: directory in which the run folder is created.
-- `parallel::Symbol`: `:serial` (default) or `:processes` (`pmap` with a `CachingPool` over
-  the worker processes, which must have run `@everywhere using SpectralFits`).
+- `parallel::Symbol`: `:processes` (default; `pmap` with a `CachingPool` over `n_workers`
+  worker processes) or `:serial`.
+- `n_workers::Int`: number of worker processes for `:processes` (default 2). Existing workers
+  are used first; `run` adds the missing ones (same project, `using SpectralFits`) and removes
+  the ones it added when it finishes.
 
 # Example
 ```julia
@@ -60,6 +63,7 @@ struct BatchRetrievalConfig{A<:NamedTuple, R<:RetrievalConfig, X<:ComponentVecto
     prior_sigma::X
     output_root::String
     parallel::Symbol
+    n_workers::Int
 end
 
 function BatchRetrievalConfig(; experiment::AbstractString, data_files = nothing,
@@ -68,7 +72,7 @@ function BatchRetrievalConfig(; experiment::AbstractString, data_files = nothing
                               averaging_period::Dates.Period, absorbers::NamedTuple,
                               retrieval::RetrievalConfig, x_prior::ComponentVector,
                               prior_sigma::ComponentVector, output_root::AbstractString = "runs",
-                              parallel::Symbol = :serial)
+                              parallel::Symbol = :processes, n_workers::Integer = 2)
     _check_experiment(experiment)
     files, directory = _check_inputs(data_files, data_directory)
     noise === nothing || noise isa AbstractNoiseModel ||
@@ -81,9 +85,10 @@ function BatchRetrievalConfig(; experiment::AbstractString, data_files = nothing
     isempty(output_root) && throw(ArgumentError("output_root: must not be empty"))
     parallel in (:serial, :processes) ||
         throw(ArgumentError("parallel: must be :serial or :processes, got :$parallel"))
+    n_workers >= 1 || throw(ArgumentError("n_workers: must be at least 1, got $n_workers"))
     return BatchRetrievalConfig(String(experiment), files, directory, file_pattern, reader, noise,
                                 averaging_period, absorbers, retrieval, x_prior_f, sigma_f,
-                                String(output_root), parallel)
+                                String(output_root), parallel, Int(n_workers))
 end
 
 function _check_experiment(experiment::AbstractString)

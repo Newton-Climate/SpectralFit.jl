@@ -47,14 +47,14 @@ end
 """
     select_window(measurement, minimum_cm, maximum_cm)
 
-New measurement restricted to the open interval `minimum_cm < coordinate < maximum_cm`
-(open question 13: a point on a window edge is excluded, as in v0.1).
+New measurement restricted to the closed interval `minimum_cm <= coordinate <= maximum_cm`
+(open question 13: a point on a window edge is included; v0.1 excluded it).
 """
 function select_window(m::Measurement, minimum_cm::Real, maximum_cm::Real)
     minimum_cm < maximum_cm ||
         throw(ArgumentError("select_window: minimum_cm $minimum_cm must be below maximum_cm $maximum_cm"))
-    idx = findall(c -> minimum_cm < c < maximum_cm, m.coordinate)
-    isempty(idx) && throw(ArgumentError("select_window: no observations in ($minimum_cm, $maximum_cm)"))
+    idx = findall(c -> minimum_cm <= c <= maximum_cm, m.coordinate)
+    isempty(idx) && throw(ArgumentError("select_window: no observations in [$minimum_cm, $maximum_cm]"))
     return Measurement(y = m.y[idx], coordinate = m.coordinate[idx],
                        noise_variance = m.noise_variance[idx], time = m.time,
                        conditions = m.conditions, metadata = m.metadata)

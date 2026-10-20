@@ -38,7 +38,7 @@ config = BatchRetrievalConfig(
     experiment = "merlin-r6",
     data_files = ["../data/20160921.h5"],
     reader = DCSReaderConfig(path_length_cm = 195017.0,
-                             time_epoch = DateTime(1904, 1, 1)),   # LabVIEW machine time
+                             pressure_scale = 0.9938),   # 2016 campaign pressure correction
     noise = ResidualNoise(flat_windows_cm = [(6076.10, 6076.60), (6077.55, 6077.95)],
                           polynomial_order = 3),
     averaging_period = Minute(15),
@@ -47,7 +47,7 @@ config = BatchRetrievalConfig(
     x_prior = x_prior,
     prior_sigma = prior_sigma,
     output_root = "../data/runs",
-    parallel = :serial,      # or :processes, after addprocs(n) and @everywhere using SpectralFits
+    n_workers = 2,           # worker processes started by run; parallel = :serial for none
 )
 
 summary = run(config)        # results in ../data/runs/<yyyy-mm-dd>_merlin-r6_<git hash>/

@@ -35,11 +35,11 @@ end
             ms = read_dcs_measurements(path, DCSReaderConfig())
             @test length(ms) == 4
             @test ms[1].coordinate ≈ truth.nu rtol = 1e-12                 # Hz -> cm-1
-            @test [m.conditions.pressure_hPa for m in ms] ≈ 0.9938 .* truth.pressure
+            @test [m.conditions.pressure_hPa for m in ms] == truth.pressure          # scale 1
             @test [m.conditions.temperature_K for m in ms] ≈ truth.temperature_C .+ 273.15
             @test all(m -> m.conditions.path_length_cm == 195017.0, ms)
             @test ms[3].y == truth.intensity[3, :]
-            @test ms[1].time == unix2datetime(truth.machine_time[1])
+            @test ms[1].time == LABVIEW_EPOCH + Millisecond(round(Int64, 1000 * truth.machine_time[1]))
             @test ms[2].metadata.machine_time == truth.machine_time[2]
             @test ms[2].metadata.source_file == path
             @test ms[2].metadata.n_averaged == 1
@@ -58,11 +58,11 @@ end
         names = (pressure = "p_custom", temperature = "t_custom", time = "time_custom")
         truth = write_dcs_fixture(path, names)
         @test_throws ArgumentError read_dcs_measurements(path, DCSReaderConfig())  # unknown layout
-        config = DCSReaderConfig(path_length_cm = 196367.0, pressure_scale = 1.0,
+        config = DCSReaderConfig(path_length_cm = 196367.0, pressure_scale = 0.9938,
                                  field_layout = DCSFieldLayout(; names...),
                                  noise_model = ConstantNoise(1e-6))
         ms = read_dcs_measurements(path, config)
-        @test [m.conditions.pressure_hPa for m in ms] == truth.pressure
+        @test [m.conditions.pressure_hPa for m in ms] ≈ 0.9938 .* truth.pressure
         @test all(m -> m.conditions.path_length_cm == 196367.0, ms)
         @test all(m -> m.noise_variance == fill(1e-6, length(truth.nu)), ms)
         # residual noise model recovers the 1e-3 white noise of the fixture
@@ -100,10 +100,10 @@ end
     mktempdir() do dir
         path = joinpath(dir, "epoch.h5")
         truth = write_dcs_fixture(path, DCS_FIXTURE_LAYOUTS[3])
-        unix = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6)))
-        @test unix[1].time == unix2datetime(truth.machine_time[1])
-        labview = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6),
-                                                              time_epoch = DateTime(1904, 1, 1)))
+        labview = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6)))
         @test labview[1].time == DateTime(1904, 1, 1) + Millisecond(round(Int64, 1000 * truth.machine_time[1]))
+        unix = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6),
+                                                           time_epoch = DateTime(1970, 1, 1)))
+        @test unix[1].time == unix2datetime(truth.machine_time[1])
     end
 end

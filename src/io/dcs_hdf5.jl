@@ -10,7 +10,7 @@ Names of the HDF5 datasets in a DCS file:
 
 - `pressure`: pressure in hPa (mbar), one value per record.
 - `temperature`: temperature in degrees C, one value per record.
-- `time`: machine time in unix seconds, one value per record.
+- `time`: machine time in seconds since `DCSReaderConfig.time_epoch`, one value per record.
 - `frequency`: optical frequency grid in Hz.
 - `intensity`: transmitted intensity, a matrix with one record per row
   (`n_records x n_frequencies`, as v0.1 read it); the transpose is accepted.
@@ -39,17 +39,20 @@ const DCS_PRESSURE_TIME_LAYOUTS = (("pressure_evolution", "totaltime_priorfit"),
 const DCS_TEMPERATURE_FIELDS = ("temperature_fitted", "temperature_fitted_l", "Temp_CS",
                                 "temperature_evolution")
 
+"""Zero of LabVIEW machine time, the default `DCSReaderConfig` time epoch."""
+const LABVIEW_EPOCH = DateTime(1904, 1, 1)
+
 """
-    DCSReaderConfig(; path_length_cm = 195017.0, pressure_scale = 0.9938,
+    DCSReaderConfig(; path_length_cm = 195017.0, pressure_scale = 1.0,
                     field_layout = nothing, noise_model = ShotNoise(),
-                    invalid_records = :skip, time_epoch = DateTime(1970, 1, 1))
+                    invalid_records = :skip, time_epoch = LABVIEW_EPOCH)
 
 Settings for `read_dcs_measurements`.
 
 - `path_length_cm`: optical path length in cm stored in each measurement's conditions. The
   default is the v0.1 DCS A round trip (195017 cm = 1.95 km; v0.1 mislabelled it metres).
-- `pressure_scale`: dimensionless factor applied to the recorded pressure (v0.1 hard-coded
-  0.9938; kept as the default, open question 3).
+- `pressure_scale`: dimensionless factor applied to the recorded pressure (default 1). v0.1
+  hard-coded 0.9938, a correction for the 2016 campaign only; pass it for those files.
 - `field_layout`: a `DCSFieldLayout`, or `nothing` to detect one of the three known layouts:
   `pressure_evolution` + `totaltime_priorfit`, `pressure_evolution` + `TotalTime`, or
   `Pres_CS` + `TotalTime`; temperature is the first present of `temperature_fitted`,
@@ -61,9 +64,10 @@ Settings for `read_dcs_measurements`.
 - `invalid_records`: what to do with a record whose intensity is not finite or whose noise
   variance is not positive and finite (for example an all-zero record). `:skip` (default)
   leaves it out and logs a warning with the record indices; `:error` throws.
-- `time_epoch`: the `DateTime` at which the machine-time field is zero. The default is the Unix
-  epoch, as in v0.1. LabVIEW files count seconds from `DateTime(1904, 1, 1)`; the
-  20160921 MERLIN file is one, and with the Unix default its times come out 66 years late.
+- `time_epoch`: the `DateTime` at which the machine-time field is zero. The default is the
+  LabVIEW epoch `DateTime(1904, 1, 1)` used by the DCS acquisition software (the 20160921
+  MERLIN file is one). v0.1 read these times as unix seconds, so its timestamps are 66 years
+  late; pass `time_epoch = DateTime(1970, 1, 1)` for files that store unix time.
 
 # Example
 ```julia
@@ -79,11 +83,11 @@ struct DCSReaderConfig{N<:AbstractNoiseModel}
     invalid_records::Symbol
     time_epoch::DateTime
 end
-function DCSReaderConfig(; path_length_cm::Real = 195017.0, pressure_scale::Real = 0.9938,
+function DCSReaderConfig(; path_length_cm::Real = 195017.0, pressure_scale::Real = 1.0,
                          field_layout::Union{Nothing,DCSFieldLayout} = nothing,
                          noise_model::AbstractNoiseModel = ShotNoise(),
                          invalid_records::Symbol = :skip,
-                         time_epoch::DateTime = DateTime(1970, 1, 1))
+                         time_epoch::DateTime = LABVIEW_EPOCH)
     path_length_cm > 0 || throw(ArgumentError("path_length_cm must be positive"))
     pressure_scale > 0 || throw(ArgumentError("pressure_scale must be positive"))
     invalid_records in (:skip, :error) ||
@@ -119,7 +123,8 @@ Read a dual-comb HDF5 file into one `Measurement` per record:
   `SPEED_OF_LIGHT_CM_PER_S`.
 - `y`: the record's intensity (instrument units).
 - `noise_variance`: from `reader_config.noise_model` applied to all full-spectrum records.
-- `time`: the machine time (unix seconds) as a `DateTime` (millisecond resolution).
+- `time`: the machine time (seconds since `time_epoch`) as a `DateTime` (millisecond
+  resolution).
 - `conditions = (pressure_hPa, temperature_K, path_length_cm)`: pressure times
   `pressure_scale`, temperature in degrees C plus 273.15, the configured path length.
 - `metadata = (source_file, machine_time, record_index, n_averaged = 1)`.
@@ -188,7 +193,7 @@ function _records_by_row(intensity::AbstractVecOrMat, n_records, n_frequencies, 
                             "($n_records, $n_frequencies) or its transpose"))
 end
 
-export DCSFieldLayout, DCSReaderConfig, detect_dcs_field_layout, read_dcs_measurements
+export LABVIEW_EPOCH, DCSFieldLayout, DCSReaderConfig, detect_dcs_field_layout, read_dcs_measurements
 
 """
     read_measurements(DCS, path; reader_config = DCSReaderConfig()) -> Vector{Measurement}

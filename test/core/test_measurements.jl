@@ -5,7 +5,7 @@
     @test m.noise_variance == fill(1e-4, length(nu))
     @test m.conditions.pressure_hPa == 850.0
     w = select_window(m, 6001.0, 6003.0)
-    @test w.coordinate == [6001.5, 6002.0, 6002.5]     # open interval
+    @test w.coordinate == [6001.0, 6001.5, 6002.0, 6002.5, 6003.0]     # closed interval
     @test w.time == m.time
     @test_throws DimensionMismatch Measurement(y = ones(3), coordinate = [1.0, 2.0], noise_variance = 1.0)
     @test_throws ArgumentError Measurement(y = ones(2), coordinate = [1.0, 2.0], noise_variance = 0.0)

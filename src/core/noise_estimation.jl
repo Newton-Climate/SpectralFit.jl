@@ -30,7 +30,7 @@ end
 
 function _window_indices(coordinate, window)
     a, b = window
-    return findall(c -> a < c < b, coordinate)       # open interval, as select_window
+    return findall(c -> a <= c <= b, coordinate)     # closed interval, as select_window
 end
 
 # ---------------------------------------------------------------- residual estimator
@@ -44,7 +44,7 @@ polynomial fitted by least squares inside each spectrally flat window.
 - `coordinate`: wavenumber in cm-1 (any sorted or unsorted vector).
 - `intensity`: one record (vector, same length as `coordinate`), or a matrix with one record
   per row (`n_records x length(coordinate)`).
-- `flat_windows_cm`: vector of `(minimum_cm, maximum_cm)` tuples, open intervals, free of
+- `flat_windows_cm`: vector of `(minimum_cm, maximum_cm)` tuples, closed intervals, free of
   absorption lines.
 - `polynomial_order`: degree of the detrending polynomial in each window.
 
