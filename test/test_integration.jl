@@ -260,3 +260,62 @@ end
         @test all(isnan, res.model)
     end
 end
+
+@testset "profile retrieval posterior includes the prior" for inversion in (profile_inversion, adaptive_inversion)
+    prob = profile_problem()
+    f = generate_profile_model(prob.xa, prob.meas, prob.spectra, prob.setup)
+    res = inversion(f, prob.xa, prob.meas, prob.spectra, prob.setup)
+    Ŝ = inv(res.K' * res.Sₑ⁻¹ * res.K + res.Sₐ⁻¹)   # Rodgers (2000) eq. 2.27
+    @test res.S ≈ Ŝ rtol = 1e-8
+    # the prior can only shrink the posterior variance
+    @test all(diag(res.S) .<= diag(inv(res.K' * res.Sₑ⁻¹ * res.K)) .* (1 + 1e-10))
+end
+
+@testset "single-layer model: mole-fraction state matches column state" begin
+    p, T = P_SURF, T_SURF
+    q_H2O, q_CH4 = 0.01, 1900e-9                       # dry-air mole fractions
+    vcd_wet = vcd_surface(p, T)
+    vcd_dry = vcd_wet / (1 + q_H2O)
+    shape = [1.0, 0.01, 0.0]
+    x_col = StateVector("H2O" => q_H2O * vcd_dry, "CH4" => q_CH4 * vcd_dry, "shape_parameters" => shape)
+    x_vmr = StateVector("H2O" => q_H2O, "CH4" => q_CH4, "shape_parameters" => shape)
+    meas = make_measurement(zeros(length(MEAS_GRID)))
+    spectra = setup_molecules(MOLECULES)
+    y_col = generate_forward_model(x_col, meas, spectra, column_setup(fit_column=true))(x_col)
+    y_vmr = generate_forward_model(x_vmr, meas, spectra, column_setup(fit_column=false))(x_vmr)
+    @test minimum(y_col) < 0.99                         # absorption is visible
+    @test y_vmr ≈ y_col rtol = 1e-10
+
+    setup = column_setup()
+    delete!(setup, "fit_column")
+    @test_throws ErrorException generate_forward_model(x_col, meas, spectra, setup)
+end
+
+@testset "linear (log-space) mode" begin
+    x_true = gas_state(true_state())
+    x_true["shape_parameters"] = [0.0, 0.01, 0.0]       # log-space baseline
+    σ = 1e-4                                             # noise on linear intensity
+    meas, spectra = synthetic_measurement(x_true; σ=0.0, setup=column_setup(linear=true))
+    I_true = exp.(meas.intensity)
+    meas.intensity = log.(I_true .+ σ .* randn(MersenneTwister(3), length(I_true)))
+    meas.σ² = σ^2
+
+    # nonlinear_inversion weights log residuals by I²/σ² by default
+    setup = column_setup(linear=true)
+    f = generate_forward_model(x_true, meas, spectra, setup)
+    res = nonlinear_inversion(f, x_true, meas, spectra, setup)
+    @test diag(res.Sₑ⁻¹) ≈ exp.(2 .* meas.intensity) ./ σ^2
+    @test 0.5 < res.χ² < 1.5
+    @test all(res.Sₐ⁻¹ .== 0)                            # this fit has no prior
+
+    # adaptive_inversion leaves the caller's measurement untouched
+    prob = profile_problem()
+    prob.setup["linear"] = true
+    prob.meas.intensity = log.(prob.meas.intensity)
+    prob.xa["shape_parameters"] = [log(maximum(exp.(prob.meas.intensity))), 0.0, 0.0]
+    y_before = copy(prob.meas.intensity)
+    fp = generate_profile_model(prob.xa, prob.meas, prob.spectra, prob.setup)
+    res_p = adaptive_inversion(fp, prob.xa, prob.meas, prob.spectra, prob.setup)
+    @test prob.meas.intensity == y_before
+    @test res_p.measurement == y_before
+end

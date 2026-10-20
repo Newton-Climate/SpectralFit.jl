@@ -14,8 +14,8 @@ function make_obs_error(measurement::AbstractMeasurement;
 
     value = ones(n)
     if linear
-        println("linear obs error")
-        value .= 1 ./ (noise ./ measurement.intensity .^2)
+        # measurement.intensity holds log(I); var(log I) = σ²/I², so the weight is I²/σ²
+        value .= exp.(2 .* measurement.intensity) ./ noise
     else
         value .*= @. 1/noise
     end
@@ -85,9 +85,9 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
         Sₑ⁻¹ = make_obs_error(measurement, masked_windows=inversion_setup["masked_windows"], linear=linear)
     else
         if verbose; println("default covariance"); end
-        Sₑ⁻¹ = make_obs_error(measurement, linear=false)
+        Sₑ⁻¹ = make_obs_error(measurement, linear=linear)
     end
-    
+
     y = measurement.intensity;
     xᵢ = x₀;
     xᵢ = assemble_state_vector!(xᵢ)
@@ -156,7 +156,7 @@ function nonlinear_inversion(f, x₀::AbstractDict, measurement::AbstractMeasure
     return InversionResults(timestamp=measurement.time, machine_time=measurement.machine_time,
                               x=x,
                               measurement=y, model=fᵢ, χ²=χ², S=S,
-                              grid=measurement.grid, K=kᵢ, Sₑ⁻¹=Sₑ⁻¹, Sₐ⁻¹=ones(length(measurement.grid)))     
+                              grid=measurement.grid, K=kᵢ, Sₑ⁻¹=Sₑ⁻¹, Sₐ⁻¹=zeros(state_length, state_length)) # no prior in this fit     
 end#function
 
 
@@ -276,7 +276,7 @@ function profile_inversion(f::Function, x₀::AbstractDict, measurement::Abstrac
 
     # Calculate χ²
     χ² = (y-fᵢ)'*Sₒ⁻¹*(y-fᵢ)/degrees
-    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ); # posterior error covariance
+    S = inv(Kᵢ'*Sₒ⁻¹*Kᵢ + Sₐ⁻¹); # posterior error covariance
     x=assemble_state_vector!(xᵢ, collect(keys(x₀)), num_levels, inversion_setup)
 
     # Gain matrix
@@ -351,9 +351,9 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         j_old = (y - fᵢ)'*Sₒ⁻¹*(y - fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
         x_old, f_old = xᵢ, fᵢ
         # keep a user-supplied Sₑ⁻¹ fixed instead of rebuilding it from the model
+        # weight by the modelled rather than the noisy intensity, without overwriting the caller's measurement
         if linear && !haskey(inversion_setup, "obs_covariance")
-            measurement.intensity = fᵢ;
-            Sₒ⁻¹ = make_obs_error(measurement, linear=linear)
+            Sₒ⁻¹ = Diagonal(exp.(2 .* fᵢ) ./ measurement.σ²)
         end
         # Baysian Maximum Likelihood Estimation 
         # lhs = (Sₐ⁻¹ + Kᵢ'*Sₐ⁻¹*Kᵢ + γ*Sₒ⁻¹)

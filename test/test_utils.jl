@@ -95,7 +95,9 @@ end
     m = make_measurement([1.0, 2.0, 4.0, 1.0]; grid=[1.0, 2.0, 3.0, 4.0], σ²=0.01)
     @test SF.make_obs_error(m) ≈ Diagonal(fill(100.0, 4))
     @test SF.make_obs_error(m; σ²=0.04) ≈ Diagonal(fill(25.0, 4))
-    @test SF.make_obs_error(m; linear=true) ≈ Diagonal([1.0, 4.0, 16.0, 1.0] ./ 0.01)
+    # linear mode: intensity holds log(I), so the weight is I²/σ² with I = exp(intensity)
+    m_log = make_measurement(log.([1.0, 2.0, 4.0, 1.0]); grid=[1.0, 2.0, 3.0, 4.0], σ²=0.01)
+    @test SF.make_obs_error(m_log; linear=true) ≈ Diagonal([1.0, 4.0, 16.0, 1.0] ./ 0.01)
 
     masked = SF.make_obs_error(m; masked_windows=[1.5 3.5])
     @test diag(masked) ≈ [100.0, 1 / (1e5 * 0.01), 1 / (1e5 * 0.01), 100.0]
