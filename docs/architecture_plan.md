@@ -480,8 +480,8 @@ end
 `Measurement` is immutable and holds no physics settings. A keyword constructor fills
 `conditions` and `metadata` with empty named tuples when they are not given. Core functions on measurements:
 
-- `select_window(measurement, minimum_cm, maximum_cm)`: a new measurement restricted to an
-  open interval, as `get_measurement` does now.
+- `select_window(measurement, minimum_cm, maximum_cm)`: a new measurement restricted to a
+  closed interval (`get_measurement` used an open one; see section 8, question 13).
 - `time_average(measurements, period::Period)`: bins on half-open intervals, keeps bins with
   one sample, and averages noise variance as the sum over the square of the count. Fixes
   issue 5.
@@ -1103,36 +1103,44 @@ Other notes:
 - Keep `Float64` throughout; the struct type parameters allow other float types but the tests
   only cover Float64.
 
-## 8. Open questions and the defaults implemented
+## 8. Decisions on the open questions
 
-Each question has a provisional default in the code, chosen for regression parity with v0.1
-or as the plan proposed. They still need confirmation; when one is confirmed, delete
-"provisional" and the question text.
+Decided 2026-10-20. Question 12 is still open.
 
-1. Pushing the `v0.1-legacy` tag. Provisional: the tag exists locally only.
-2. Physical constants. Provisional: the v0.1 values (gravity 9.8196, gas constant 8.314472,
-   Avogadro 6.0221415e23) for regression parity. Switching to CODATA 2018 and standard gravity
-   is a one-file change in `core/physical_constants.jl`.
-3. The 0.9938 DCS pressure factor. Provisional: kept as the default of
-   `DCSReaderConfig(pressure_scale = 0.9938)`. Its physical origin is still unknown.
-4. DCS interpolation. Provisional: the cubic B-spline (exact parity; spectra match v0.1 to
-   1e-10).
-5. H2O in VMR units. Provisional: dry-air mole fraction.
-6. Temperature in a layered column. Provisional: a full per-layer profile.
-7. The no-prior least-squares mode. Provisional: kept; a zero prior precision is allowed
-   (positive semi-definite check), and LM damps those elements with Marquardt scaling.
-8. Masked windows. Provisional: de-weighting by 1e-5 (`mask_mode = :deweight`);
-   `mask_mode = :drop` is also implemented.
-9. WMS noise. Provisional: no decimation is applied automatically; `RetrievalProblem` accepts
-   any symmetric positive definite `obs_precision`, so a banded one can be passed.
-10. WMS demodulator. Provisional: `HarmonicExpansion` is the default for retrievals; the
-    Butterworth filter is implemented in core, without DSP.jl.
-11. Parallelism in the batch app. Provisional: `:serial` (default) or `:processes` with
-    `pmap` over a `CachingPool`.
-12. The OCO ABSCO path. Provisional: kept (`ABSCOTable`, `read_absco_table`). Whether the
-    ABSCO broadener axis is a wet or a dry mole fraction needs checking against the ABSCO
-    documentation; the code assumes wet and converts.
-13. Window edges. Provisional: open intervals, as in v0.1.
+1. The `v0.1-legacy` tag is pushed to origin (b47a99d).
+2. Physical constants are CODATA 2018 (Avogadro 6.02214076e23, gas constant N_A k_B) with
+   standard gravity 9.80665. The regression reference is the v0.1-legacy code with the same
+   three constants patched in (see `test/regression/README.md`).
+3. `DCSReaderConfig(pressure_scale = 1.0)` is the default. The 0.9938 factor was a correction
+   for the 2016 campaign only; pass it explicitly for those files.
+4. DCS interpolation is a precomputed sparse matrix, the exact cubic B-spline weights
+   truncated where they fall below machine precision, so spectra still match v0.1 to 1e-10.
+   A stretch retrieved from the state moves the query points, so it keeps the B-spline
+   evaluation.
+5. H2O in VMR units is a dry-air mole fraction.
+6. Temperature in a layered column is a full per-layer profile.
+7. The no-prior least-squares mode is kept: a zero prior precision is allowed (positive
+   semi-definite check), and LM damps those elements with Marquardt scaling.
+8. Masked windows are de-weighted by 1e-5 (`mask_mode = :deweight`, the v0.1 behaviour);
+   `mask_mode = :drop` is available.
+9. WMS noise uses a banded observation covariance built from the lock-in low-pass filter's
+   autocorrelation, not decimation.
+10. `HarmonicExpansion` is the default WMS demodulator for retrievals; the Butterworth filter of
+    `DigitalLockIn` is in core, without DSP.jl.
+11. The batch app runs on 2 worker processes by default (`parallel = :processes`,
+    `n_workers = 2`); `run` starts the missing workers and removes them afterwards.
+    `parallel = :serial` is available.
+12. Open: the H2O axis of the OCO ABSCO tables. The code converts the dry mole fraction q to a
+    wet one, q / (1 + q), before the lookup. The ABSCO user guide does not define the basis,
+    and the OCO L2 code (RtRetrievalFramework `absorber_absco.cc`) passes its H2O VMR, which
+    is per dry air, to the table without conversion. The two differ by about 2% in the H2O
+    coordinate at q = 0.02, a small change in the cross section.
+13. Window edges are closed intervals: a point on an edge is included. This applies to
+    retrieval windows, masked windows and the flat windows of the noise estimators.
+
+The reader's `time_epoch` defaults to the LabVIEW epoch, `DateTime(1904, 1, 1)`, used by the
+DCS acquisition software; v0.1 read these times as unix seconds, so v0.1 timestamps are 66
+years late.
 
 ## 9. Example: a DCS script under the new API
 
@@ -1171,7 +1179,7 @@ config = BatchRetrievalConfig(
     experiment = "merlin-r6",
     data_files = ["../data/20160921.h5"],
     reader = DCSReaderConfig(path_length_cm = 195017.0,
-                             time_epoch = DateTime(1904, 1, 1)),   # LabVIEW machine time
+                             pressure_scale = 0.9938),   # 2016 campaign pressure correction
     noise = ResidualNoise(flat_windows_cm = [(6076.10, 6076.60), (6077.55, 6077.95)],
                           polynomial_order = 3),
     averaging_period = Minute(15),
@@ -1180,7 +1188,7 @@ config = BatchRetrievalConfig(
     x_prior = x_prior,
     prior_sigma = prior_sigma,
     output_root = "../data/runs",
-    parallel = :serial,      # or :processes, after addprocs(n) and @everywhere using SpectralFits
+    n_workers = 2,           # worker processes started by run; parallel = :serial for none
 )
 
 summary = run(config)        # results in ../data/runs/<yyyy-mm-dd>_merlin-r6_<git hash>/
@@ -1192,8 +1200,8 @@ needed. Interactive work on one measurement uses the same pieces directly:
 
 ```julia
 # the reader applies its noise model to the full-spectrum records, before averaging
-reader = DCSReaderConfig(path_length_cm = 195017.0, noise_model = config.noise,
-                         time_epoch = DateTime(1904, 1, 1))
+reader = DCSReaderConfig(path_length_cm = 195017.0, pressure_scale = 0.9938,
+                         noise_model = config.noise)
 measurements = read_measurements(DCS, "../data/20160921.h5"; reader_config = reader)
 m = select_window(time_average(measurements, Minute(15))[1], 6076.05, 6077.95)
 # the same in one call: BatchRetrieval.averaged_measurements(config, "../data/20160921.h5")
@@ -1321,9 +1329,9 @@ Input, output and the batch app:
 - `DCSReaderConfig` has two settings beyond the plan. `invalid_records = :skip` (default)
   leaves out records with non-finite intensity or an invalid noise variance and logs them;
   the 20160921 file has 16 such records out of 2599, which made the whole read fail. Use
-  `:error` to fail instead. `time_epoch` sets the zero of the machine-time field: Unix by
-  default, as in v0.1. The 20160921 file counts from the LabVIEW epoch,
-  `DateTime(1904, 1, 1)`, so v0.1 timestamps for it were 66 years late.
+  `:error` to fail instead. `time_epoch` sets the zero of the machine-time field: the LabVIEW
+  epoch `DateTime(1904, 1, 1)` by default. v0.1 read it as Unix time, so v0.1 timestamps for
+  the 20160921 file were 66 years late.
 - The batch app's `noise` replaces the reader's noise model, since the reader applies it to
   full-spectrum records before averaging. Results files hold plain data only
   (`format = "SpectralFits.retrieval_results"`, version 1); `load_results` rebuilds
