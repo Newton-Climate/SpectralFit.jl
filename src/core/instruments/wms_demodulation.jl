@@ -8,6 +8,10 @@
 # realizes the same definition as X_n = LP[2 S cos(n w t)], Y_n = LP[2 S sin(n w t)],
 # DC = LP[S].
 
+"""
+Supertype of WMS demodulators (`HarmonicExpansion`, `DigitalLockIn`): how the in-phase and
+quadrature components X_n, Y_n and the DC level are extracted from the detector signal.
+"""
 abstract type AbstractDemodulator end
 
 function check_harmonics(harmonics)

@@ -12,6 +12,10 @@ or `Failed` (a numerical failure such as a singular normal matrix or non-finite 
 """
 @enum RetrievalStatus Converged MaxIterations Failed
 
+@doc "Status of a retrieval whose Rodgers test d2 / n_state fell below the tolerance." Converged
+@doc "Status of a retrieval that reached `max_iterations` without meeting the Rodgers test." MaxIterations
+@doc "Status of a retrieval that stopped on a numerical failure; `result.message` says which." Failed
+
 """
     RetrievalResult
 

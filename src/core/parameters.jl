@@ -38,6 +38,12 @@ resolve(FromState{(:instrument, :stretch)}(), x)  # 1.0
 @inline resolve(p::Fixed, x) = p.value
 @inline resolve(::FromState{Path}, x) where {Path} = get_state_path(x, Path)
 
+"""
+    get_state_path(x, path)
+
+State entry at `path`, a `Symbol` or a tuple of symbols for a nested entry.
+`get_state_path(ComponentVector(instrument = (stretch = 1.0,)), (:instrument, :stretch)) == 1.0`.
+"""
 @inline get_state_path(x, name::Symbol) = getproperty(x, name)
 @inline get_state_path(x, path::Tuple{Symbol}) = getproperty(x, path[1])
 @inline get_state_path(x, path::Tuple{Symbol,Vararg{Symbol}}) =

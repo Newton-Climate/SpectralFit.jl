@@ -41,7 +41,8 @@ const DCS_TEMPERATURE_FIELDS = ("temperature_fitted", "temperature_fitted_l", "T
 
 """
     DCSReaderConfig(; path_length_cm = 195017.0, pressure_scale = 0.9938,
-                    field_layout = nothing, noise_model = ShotNoise())
+                    field_layout = nothing, noise_model = ShotNoise(),
+                    invalid_records = :skip, time_epoch = DateTime(1970, 1, 1))
 
 Settings for `read_dcs_measurements`.
 
@@ -57,6 +58,12 @@ Settings for `read_dcs_measurements`.
   `Measurement` needs a positive noise variance. The default `ShotNoise()` reproduces v0.1
   (`calc_DCS_noise`, flat window 6255.1-6255.4 cm-1, needs at least two records). Batch
   apps usually replace it with `ResidualNoise` near the retrieval window.
+- `invalid_records`: what to do with a record whose intensity is not finite or whose noise
+  variance is not positive and finite (for example an all-zero record). `:skip` (default)
+  leaves it out and logs a warning with the record indices; `:error` throws.
+- `time_epoch`: the `DateTime` at which the machine-time field is zero. The default is the Unix
+  epoch, as in v0.1. LabVIEW files count seconds from `DateTime(1904, 1, 1)`; the
+  20160921 MERLIN file is one, and with the Unix default its times come out 66 years late.
 
 # Example
 ```julia
@@ -69,14 +76,20 @@ struct DCSReaderConfig{N<:AbstractNoiseModel}
     pressure_scale::Float64
     field_layout::Union{Nothing,DCSFieldLayout}
     noise_model::N
+    invalid_records::Symbol
+    time_epoch::DateTime
 end
 function DCSReaderConfig(; path_length_cm::Real = 195017.0, pressure_scale::Real = 0.9938,
                          field_layout::Union{Nothing,DCSFieldLayout} = nothing,
-                         noise_model::AbstractNoiseModel = ShotNoise())
+                         noise_model::AbstractNoiseModel = ShotNoise(),
+                         invalid_records::Symbol = :skip,
+                         time_epoch::DateTime = DateTime(1970, 1, 1))
     path_length_cm > 0 || throw(ArgumentError("path_length_cm must be positive"))
     pressure_scale > 0 || throw(ArgumentError("pressure_scale must be positive"))
+    invalid_records in (:skip, :error) ||
+        throw(ArgumentError("invalid_records must be :skip or :error, got :$invalid_records"))
     return DCSReaderConfig(Float64(path_length_cm), Float64(pressure_scale), field_layout,
-                           noise_model)
+                           noise_model, invalid_records, time_epoch)
 end
 
 """
@@ -138,21 +151,32 @@ function read_dcs_measurements(path::AbstractString, reader_config::DCSReaderCon
     pressure_hPa = reader_config.pressure_scale .* Float64.(raw.pressure)
     temperature_K = Float64.(raw.temperature) .+ 273.15
     variances = record_noise_variances(reader_config.noise_model, wavenumber, intensity)
-    all(v -> v > 0 && isfinite(v), variances) ||
-        throw(ArgumentError("$path: noise model gave a non-positive or non-finite variance"))
+    valid = [v > 0 && isfinite(v) && all(isfinite, view(intensity, i, :))
+             for (i, v) in enumerate(variances)]
+    if !all(valid)
+        bad = findall(!, valid)
+        reader_config.invalid_records === :error && throw(ArgumentError(
+            "$path: records $bad have non-finite intensity or a non-positive or non-finite " *
+            "noise variance"))
+        @warn "skipping $(length(bad)) of $n_records records with non-finite intensity or invalid noise variance" path records = bad
+    end
 
     source = String(path)
     return [Measurement(y = intensity[i, :], coordinate = wavenumber,
                         noise_variance = variances[i],
-                        time = unix2datetime(Float64(raw.machine_time[i])),
+                        time = machine_time_to_datetime(raw.machine_time[i], reader_config.time_epoch),
                         conditions = (pressure_hPa = pressure_hPa[i],
                                       temperature_K = temperature_K[i],
                                       path_length_cm = reader_config.path_length_cm),
                         metadata = (source_file = source,
                                     machine_time = Float64(raw.machine_time[i]),
                                     record_index = i, n_averaged = 1))
-            for i in 1:n_records]
+            for i in 1:n_records if valid[i]]
 end
+
+"""Seconds since `epoch` as a `DateTime`, to the millisecond."""
+machine_time_to_datetime(seconds::Real, epoch::DateTime) =
+    epoch + Millisecond(round(Int64, 1000 * Float64(seconds)))
 
 # Intensity as n_records x n_frequencies, accepting either orientation (records-by-row wins
 # when the matrix is square, as in v0.1).

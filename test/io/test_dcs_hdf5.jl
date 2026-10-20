@@ -76,3 +76,34 @@ end
         @test_throws ArgumentError DCSReaderConfig(path_length_cm = -1.0)
     end
 end
+
+@testset "DCS reader: invalid records are skipped or rejected" begin
+    mktempdir() do dir
+        path = joinpath(dir, "bad_record.h5")
+        names = DCS_FIXTURE_LAYOUTS[3]
+        truth = write_dcs_fixture(path, names)
+        bad = copy(truth.intensity); bad[2, 10] = NaN
+        h5open(path, "r+") do f
+            delete_object(f, "WaveToFitROI_1600a")
+            f["WaveToFitROI_1600a"] = bad
+        end
+        config = DCSReaderConfig(noise_model = ConstantNoise(1e-6))
+        ms = @test_logs (:warn, r"skipping 1 of 4 records") read_dcs_measurements(path, config)
+        @test [m.metadata.record_index for m in ms] == [1, 3, 4]
+        strict = DCSReaderConfig(noise_model = ConstantNoise(1e-6), invalid_records = :error)
+        @test_throws r"records \[2\]" read_dcs_measurements(path, strict)
+        @test_throws r"invalid_records" DCSReaderConfig(invalid_records = :drop)
+    end
+end
+
+@testset "DCS reader: machine-time epoch" begin
+    mktempdir() do dir
+        path = joinpath(dir, "epoch.h5")
+        truth = write_dcs_fixture(path, DCS_FIXTURE_LAYOUTS[3])
+        unix = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6)))
+        @test unix[1].time == unix2datetime(truth.machine_time[1])
+        labview = read_dcs_measurements(path, DCSReaderConfig(noise_model = ConstantNoise(1e-6),
+                                                              time_epoch = DateTime(1904, 1, 1)))
+        @test labview[1].time == DateTime(1904, 1, 1) + Millisecond(round(Int64, 1000 * truth.machine_time[1]))
+    end
+end

@@ -1170,7 +1170,8 @@ prior_sigma = ComponentVector(H2O = 1.0 * n_air, CH4 = 1e-6 * n_air,
 config = BatchRetrievalConfig(
     experiment = "merlin-r6",
     data_files = ["../data/20160921.h5"],
-    reader = DCSReaderConfig(path_length_cm = 195017.0),
+    reader = DCSReaderConfig(path_length_cm = 195017.0,
+                             time_epoch = DateTime(1904, 1, 1)),   # LabVIEW machine time
     noise = ResidualNoise(flat_windows_cm = [(6076.10, 6076.60), (6077.55, 6077.95)],
                           polynomial_order = 3),
     averaging_period = Minute(15),
@@ -1191,7 +1192,8 @@ needed. Interactive work on one measurement uses the same pieces directly:
 
 ```julia
 # the reader applies its noise model to the full-spectrum records, before averaging
-reader = DCSReaderConfig(path_length_cm = 195017.0, noise_model = config.noise)
+reader = DCSReaderConfig(path_length_cm = 195017.0, noise_model = config.noise,
+                         time_epoch = DateTime(1904, 1, 1))
 measurements = read_measurements(DCS, "../data/20160921.h5"; reader_config = reader)
 m = select_window(time_average(measurements, Minute(15))[1], 6076.05, 6077.95)
 # the same in one call: BatchRetrieval.averaged_measurements(config, "../data/20160921.h5")
@@ -1313,3 +1315,22 @@ Verification beyond the phase lists:
   2.2 ms and 12 ms when they are retrieved (Voigt with dual numbers, see section 7); a
   5-layer profile 0.05 ms and 0.22 ms; WMS with `HarmonicExpansion` 0.5 ms and 0.4 ms, with
   `DigitalLockIn` at 100 kHz 2.2 ms and 2.7 ms.
+
+Input, output and the batch app:
+
+- `DCSReaderConfig` has two settings beyond the plan. `invalid_records = :skip` (default)
+  leaves out records with non-finite intensity or an invalid noise variance and logs them;
+  the 20160921 file has 16 such records out of 2599, which made the whole read fail. Use
+  `:error` to fail instead. `time_epoch` sets the zero of the machine-time field: Unix by
+  default, as in v0.1. The 20160921 file counts from the LabVIEW epoch,
+  `DateTime(1904, 1, 1)`, so v0.1 timestamps for it were 66 years late.
+- The batch app's `noise` replaces the reader's noise model, since the reader applies it to
+  full-spectrum records before averaging. Results files hold plain data only
+  (`format = "SpectralFits.retrieval_results"`, version 1); `load_results` rebuilds
+  `ComponentVector` states from stored labels.
+- Smoke test on real data (not part of the test suite): reading 20160921.h5 takes about 9 s;
+  the first 15-minute average on the MERLIN window, with HITRAN 2020 CH4 and HITRAN 2016 H2O
+  line-by-line, converges in 2 iterations to 2057 +/- 15 ppb XCH4 with chi squared per
+  degree of freedom 1.77. The `.jld2` lookup tables in `DCS_experiments/spectra` were written
+  by an older JLD2 and do not load under Julia 1.12; they need regenerating.
+- `examples/dcs_merlin_batch.jl` is the section 9 script as a file.

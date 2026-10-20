@@ -3,6 +3,11 @@
 # full-spectrum records), time-average, retrieve every averaged measurement, save the results.
 # A failure in one measurement or one file is logged and recorded; the batch continues.
 
+const FileFailure = NamedTuple{(:file, :message),Tuple{String,String}}
+const MeasurementOutcome = NamedTuple{(:source_file, :index, :time, :status, :exception, :message,
+                                       :chi2_obs_per_dof, :dfs_total),
+                                      Tuple{String,Int,DateTime,Symbol,Bool,String,Float64,Float64}}
+
 """
     BatchRetrievalSummary
 
@@ -20,11 +25,6 @@ What `BatchRetrieval.run` did. Fields:
 
 `report(summary)` gives a plain-text summary.
 """
-const FileFailure = NamedTuple{(:file, :message),Tuple{String,String}}
-const MeasurementOutcome = NamedTuple{(:source_file, :index, :time, :status, :exception, :message,
-                                       :chi2_obs_per_dof, :dfs_total),
-                                      Tuple{String,Int,DateTime,Symbol,Bool,String,Float64,Float64}}
-
 struct BatchRetrievalSummary
     experiment::String
     run_folder::String
@@ -53,7 +53,8 @@ ms = averaged_measurements(config, "data/20160921.h5")
 function averaged_measurements(config::BatchRetrievalConfig, path::AbstractString)
     r = config.reader
     reader = config.noise === nothing ? r :
-             DCSReaderConfig(r.path_length_cm, r.pressure_scale, r.field_layout, config.noise)
+             DCSReaderConfig(r.path_length_cm, r.pressure_scale, r.field_layout, config.noise,
+                             r.invalid_records, r.time_epoch)
     records = read_measurements(DCS, path; reader_config = reader)
     return time_average(records, config.averaging_period)
 end

@@ -24,7 +24,9 @@ end
 
 """
 Write a DCS file (Pres_CS / Temp_CS / TotalTime layout) with 9 records 40 s apart from
-BATCH_T0, so 2-minute averaging gives 3 measurements. `nan_record` puts NaNs in one record.
+BATCH_T0, so 2-minute averaging gives 3 measurements. `nan_record` gives one record a NaN pressure:
+the reader accepts it (intensity and noise are valid), so the averaged measurement reaches the
+retrieval and fails there, which exercises the app-level failure path.
 """
 function write_batch_dcs_file(path, ch4_vmr; seed, noise_sigma = 1e-3, nan_record = nothing)
     rng = MersenneTwister(seed)
@@ -32,9 +34,10 @@ function write_batch_dcs_file(path, ch4_vmr; seed, noise_sigma = 1e-3, nan_recor
     n_records = 9
     intensity = reduce(vcat, ((truth .+ noise_sigma .* randn(rng, length(truth)))'
                               for _ in 1:n_records))
-    nan_record === nothing || (intensity[nan_record, 50:60] .= NaN)
     h5open(path, "w") do f
-        f["Pres_CS"] = fill(850.0, n_records)
+        pressure = fill(850.0, n_records)
+        nan_record === nothing || (pressure[nan_record] = NaN)
+        f["Pres_CS"] = pressure
         f["Temp_CS"] = fill(15.0, n_records)
         f["TotalTime"] = collect(datetime2unix(BATCH_T0) .+ 40.0 .* (0:n_records-1))
         f["frequency_Hz"] = BATCH_NU .* SPEED_OF_LIGHT_CM_PER_S
@@ -131,7 +134,7 @@ end
         failed = only(o for o in summary.outcomes if o.status === :Failed)
         @test basename(failed.source_file) == "20160921b.h5" && failed.index == 3
         @test failed.time == BATCH_T0 + Minute(4)
-        @test occursin("non-finite", failed.message)
+        @test occursin("pressure_hPa", failed.message)
 
         text = report(summary)
         @test occursin("converged=5", text) && occursin("failed=1", text)

@@ -2,6 +2,11 @@
 # quantity of a `HarmonicSignals` is compared with the data. A reference of 0 means the DC
 # level; a reference n >= 1 means the magnitude of harmonic n.
 
+"""
+Supertype of WMS observables (`HarmonicRatio`, `HarmonicOverDC`, `HarmonicProjection`,
+`Quadratures`, `BackgroundSubtracted`): which normalized harmonic quantity is compared with
+the data. A new observable implements `evaluate_observable`.
+"""
 abstract type AbstractWMSObservable end
 
 """
