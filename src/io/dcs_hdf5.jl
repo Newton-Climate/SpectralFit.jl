@@ -165,3 +165,17 @@ function _records_by_row(intensity::AbstractVecOrMat, n_records, n_frequencies, 
 end
 
 export DCSFieldLayout, DCSReaderConfig, detect_dcs_field_layout, read_dcs_measurements
+
+"""
+    read_measurements(DCS, path; reader_config = DCSReaderConfig()) -> Vector{Measurement}
+
+Read every record of a DCS HDF5 file (see `read_dcs_measurements`).
+
+```julia
+measurements = read_measurements(DCS, "20160921.h5"; reader_config = DCSReaderConfig())
+```
+"""
+read_measurements(::Type{<:DCS}, path::AbstractString; reader_config::DCSReaderConfig = DCSReaderConfig()) =
+    read_dcs_measurements(path, reader_config)
+
+export read_measurements

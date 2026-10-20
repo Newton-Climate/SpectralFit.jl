@@ -50,4 +50,19 @@ function finite_difference_jacobian(f, x::AbstractVector; rel_step = 1e-6)
     return J
 end
 
+const FIXTURE_MOLECULES = (H2O = 1, CO2 = 2, CH4 = 6)
+const FIXTURE_MODEL_CACHE = Dict{Any,Any}()
+
+"""
+    fixture_voigt(gas::Symbol, range_cm) -> HitranVoigt
+
+Line-by-line model of `gas` (:H2O, :CO2 or :CH4, isotope 1) from the HITRAN subset over
+`range_cm`, built once per test run with the v0.1 options (wing cutoff 40 cm-1, lines inside
+the range only).
+"""
+fixture_voigt(gas::Symbol, range_cm) = get!(FIXTURE_MODEL_CACHE, (gas, range_cm)) do
+    SpectralFits.IOLayer.load_cross_section_model(HitranVoigt, FIXTURE_PAR;
+        molecule = FIXTURE_MOLECULES[gas], isotope = 1, range_cm = range_cm)
+end
+
 end # if !@isdefined
