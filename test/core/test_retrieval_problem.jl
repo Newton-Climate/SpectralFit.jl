@@ -109,3 +109,13 @@ end
     # an informative prior removes the degeneracy
     @test build(f = f_bad, Sa = Diagonal([1.0, 1.0])) isa RetrievalProblem
 end
+
+@testset "prior whose data is itself a ComponentVector" begin
+    x = ComponentVector(a = 1.0, b = [2.0, 3.0])
+    nested = ComponentVector(collect(x), getaxes(x))      # collect keeps a ComponentVector
+    f(v) = [v[1], v[2] + v[3], v[3]]
+    problem = RetrievalProblem(f, [1.0, 5.0, 3.0], Matrix(1.0I, 3, 3), nested, Matrix(1e-6I, 3, 3))
+    result = solve(problem, GaussNewton())
+    @test getdata(result.x) isa Vector{Float64}
+    @test result.dfs_per_element.b isa AbstractVector
+end

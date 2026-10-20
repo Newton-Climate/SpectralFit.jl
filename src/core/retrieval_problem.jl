@@ -61,7 +61,7 @@ struct RetrievalProblem{F, X<:ComponentVector, PO<:AbstractMatrix, PA<:AbstractM
                               obs_precision::AbstractMatrix{<:Real},
                               x_prior::ComponentVector,
                               prior_precision::AbstractMatrix{<:Real})
-        x0 = ComponentVector(collect(Float64, getdata(x_prior)), getaxes(x_prior))
+        x0 = ComponentVector(copyto!(Vector{Float64}(undef, length(x_prior)), x_prior), getaxes(x_prior))
         y0 = collect(Float64, y)
         n_state = length(x0)
         n_obs = length(y0)
