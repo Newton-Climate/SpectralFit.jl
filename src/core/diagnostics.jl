@@ -46,7 +46,27 @@ S = posterior_covariance(K, Diagonal(fill(100.0, 3)), Diagonal([1.0, 1.0]))
 """
 posterior_covariance(K::AbstractMatrix, obs_precision::ObservationPrecision,
                      prior_precision::AbstractMatrix) =
-    Matrix{Float64}(inv(normal_matrix(K, obs_precision, prior_precision)))
+    scaled_inverse(normal_matrix(K, obs_precision, prior_precision))
+
+"""
+    scaled_inverse(N::Symmetric) -> Matrix{Float64}
+
+Inverse of a symmetric positive definite matrix, computed as `s .* inv(M) .* s'` with
+`M = s .* N .* s'` scaled to unit diagonal (`s = 1 ./ sqrt.(diag(N))`) and inverted by
+Cholesky. State vectors mix units (columns near 1e22 molecules/cm2 next to baseline
+coefficients near 1), so the unscaled normal matrix can have a condition number near 1e54
+while the scaled one is moderate; inverting it unscaled loses the small entries. Throws a
+`PosDefException` when `N` is not positive definite.
+"""
+function scaled_inverse(N::Symmetric)
+    d = diag(N)
+    all(>(0), d) || throw(PosDefException(findfirst(<=(0), d)))
+    s = 1 ./ sqrt.(d)
+    M = Symmetric(Matrix{Float64}(s .* N .* s'))
+    Minv = inv(cholesky(M))
+    S = s .* Minv .* s'
+    return Matrix{Float64}((S + S') ./ 2)
+end
 
 """
     gain_matrix(K, obs_precision, prior_precision) -> Matrix{Float64}
@@ -169,6 +189,37 @@ function chi2_per_dof(cost::Real, n_obs::Integer, n_state::Integer)
 end
 
 """
+    full_weight_observations(obs_precision) -> BitVector
+
+Observations at full weight: for a diagonal precision, those whose precision is at least 1e-3
+of the median (observations in masked windows are de-weighted by `mask_factor`, 1e-5 by
+default); for any other precision, all observations.
+"""
+function full_weight_observations(P::Diagonal)
+    d = P.diag
+    return d .>= 1e-3 * median(d)
+end
+full_weight_observations(P) = trues(size(P, 1))
+
+"""
+    residual_rmse(y, y_model, obs_precision) -> Float64
+
+Root-mean-square residual `sqrt(mean((y - y_model)^2))` in measurement-space units, over the
+observations at full weight (`full_weight_observations`). A goodness-of-fit metric in data
+units, independent of the noise model, unlike chi squared.
+
+```julia
+residual_rmse(result.y, result.y_model, result.obs_precision) == result.rmse
+```
+"""
+function residual_rmse(y::AbstractVector, y_model::AbstractVector, obs_precision)
+    keep = full_weight_observations(obs_precision)
+    any(keep) || return NaN
+    r = (y .- y_model)[keep]
+    return all(isfinite, r) ? sqrt(sum(abs2, r) / length(r)) : NaN
+end
+
+"""
     prior_influence(dfs_total, n_state) -> Float64
 
 Fraction of the state determined by the prior: `1 - dfs_total / n_state`. Zero for a pure
@@ -258,6 +309,7 @@ function _report_text(result, state_names::AbstractVector{<:AbstractString})
     println(io, "DFS total: ", _fmt(result.dfs_total))
     println(io, "chi2 obs per dof: ", _fmt(result.chi2_obs_per_dof))
     println(io, "chi2 total per dof: ", _fmt(result.chi2_total_per_dof))
+    println(io, "residual RMSE (measurement units, full-weight observations): ", _fmt(result.rmse))
     println(io, "Rodgers d2 per state: ", _fmt(result.rodgers_d2_per_state))
     println(io, "prior influence: ", _fmt(result.prior_influence))
     println(io, "condition number (scaled normal matrix): ", _fmt(result.condition_number))
@@ -274,7 +326,29 @@ function _report_text(result, state_names::AbstractVector{<:AbstractString})
     return all(isascii, text) ? text : map(c -> isascii(c) ? c : '?', text)
 end
 
-export normal_matrix, posterior_covariance, gain_matrix, averaging_kernel
-export dfs_per_element, dfs_total, rodgers_d2
+export normal_matrix, posterior_covariance, scaled_inverse, gain_matrix, averaging_kernel
+"""
+    column_averaging_kernel(averaging_kernel, indices, weights) -> Vector{Float64}
+
+Column averaging kernel of the profile at state `indices`: `(h' A) ./ h'` with
+`h = weights / sum(weights)` and `A` the block of the averaging kernel for those indices.
+With layer dry-air columns as `weights` and a state in layer columns it is the sensitivity
+of the column-mean mole fraction to each layer (1 for a perfect retrieval).
+
+```julia
+i = state_indices(result.x, :CH4)
+column_averaging_kernel(result.averaging_kernel, i, layer_dry_air_columns)
+```
+"""
+function column_averaging_kernel(A::AbstractMatrix, indices::AbstractVector{<:Integer},
+                                 weights::AbstractVector{<:Real})
+    length(indices) == length(weights) || throw(DimensionMismatch(
+        "column_averaging_kernel: $(length(indices)) state indices, $(length(weights)) weights"))
+    h = weights ./ sum(weights)
+    return vec((h' * A[indices, indices]) ./ h')
+end
+
+export dfs_per_element, dfs_total, rodgers_d2, column_averaging_kernel
 export observation_cost, prior_cost, total_cost, chi2_per_dof, prior_influence
+export residual_rmse, full_weight_observations
 export normal_matrix_condition, predicted_cost, gain_ratio

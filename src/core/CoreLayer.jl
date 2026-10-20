@@ -11,6 +11,7 @@ using SparseArrays
 using Statistics
 using Dates
 using Printf
+using Random
 using ComponentArrays
 import ForwardDiff
 import DiffResults
@@ -31,6 +32,7 @@ include("noise_estimation.jl")
 include("spectroscopy/precomputed.jl")
 include("spectroscopy/cross_section_models.jl")
 include("spectroscopy/cross_section_wrappers.jl")
+include("spectroscopy/tabulation.jl")
 
 include("atmospheres.jl")
 include("baselines.jl")
@@ -54,5 +56,7 @@ include("solvers.jl")
 include("forward_model.jl")
 include("forward_model_builder.jl")
 include("retrieval_config.jl")
+include("prior_covariance.jl")
+include("synthetic_measurements.jl")
 
 end # module CoreLayer

@@ -87,8 +87,9 @@ Binning rules:
 - `conditions`: each field is averaged when its values are numeric; a non-numeric field
   (a string, a symbol) keeps the value of the earliest sample in the bin.
 - `metadata`: `n_averaged` is the sum of the inputs' `n_averaged` (1 when absent),
-  `averaging_period` is `period`; every other field keeps the value of the earliest sample in
-  the bin (for example `machine_time` and `source_file`).
+  `averaging_period` is `period`, `first_sample_time` is the time of the earliest sample (of
+  the inputs' `first_sample_time` when present); every other field keeps the value of the
+  earliest sample in the bin (for example `machine_time` and `source_file`).
 
 All measurements must share one coordinate axis and the same `conditions` field names.
 
@@ -131,7 +132,9 @@ function _average_bin(bin::AbstractVector{<:Measurement}, start::DateTime, perio
     noise_variance = sum(m.noise_variance for m in bin) ./ n^2
     conditions = _average_named_tuples([m.conditions for m in bin])
     n_averaged = sum(m -> Int(get(m.metadata, :n_averaged, 1)), bin)
-    metadata = merge(first_m.metadata, (n_averaged = n_averaged, averaging_period = period))
+    first_time = minimum(m -> get(m.metadata, :first_sample_time, m.time), bin)
+    metadata = merge(first_m.metadata, (n_averaged = n_averaged, averaging_period = period,
+                                         first_sample_time = first_time))
     return Measurement(y = y, coordinate = first_m.coordinate, noise_variance = noise_variance,
                        time = start, conditions = conditions, metadata = metadata)
 end
@@ -146,3 +149,57 @@ function _average_named_tuples(tuples::AbstractVector{<:NamedTuple})
 end
 
 export time_average
+
+# ---------------------------------------------------------------- conditions from a time series
+
+"""
+    ConditionsTable(times::Vector{DateTime}, values::NamedTuple; max_offset = Second(60))
+
+A time series of measurement conditions, for example tower pressure and temperature:
+`values = (pressure_hPa = [...], temperature_K = [...])`, one value per time. `apply_conditions`
+replaces those fields of a measurement's `conditions` by the row nearest in time; a
+measurement with no row within `max_offset` is an error.
+
+```julia
+tower = ConditionsTable(times, (pressure_hPa = p, temperature_K = T); max_offset = Second(60))
+m_tower = apply_conditions(m, tower)
+```
+"""
+struct ConditionsTable{V<:NamedTuple}
+    times::Vector{DateTime}
+    values::V
+    max_offset::Millisecond
+    function ConditionsTable(times::AbstractVector{DateTime}, values::NamedTuple;
+                             max_offset::Dates.Period = Second(60))
+        isempty(times) && throw(ArgumentError("ConditionsTable: no times"))
+        for (k, v) in pairs(values)
+            length(v) == length(times) || throw(DimensionMismatch(
+                "ConditionsTable: $k has $(length(v)) values for $(length(times)) times"))
+            all(isfinite, v) || throw(ArgumentError("ConditionsTable: $k has non-finite values"))
+        end
+        order = sortperm(times)
+        sorted = map(v -> collect(Float64, v)[order], values)
+        return new{typeof(sorted)}(collect(times)[order], sorted, Millisecond(max_offset))
+    end
+end
+
+"""
+    apply_conditions(m::Measurement, table::ConditionsTable) -> Measurement
+
+`m` with the fields of `table` in its `conditions` taken from the table row nearest to the
+measurement's first sample time (`metadata.first_sample_time`, set by `time_average`; `m.time`
+otherwise). The values used are also recorded in `metadata.applied_conditions`.
+"""
+function apply_conditions(m::Measurement, table::ConditionsTable)
+    t = get(m.metadata, :first_sample_time, m.time)
+    k = argmin(abs.(table.times .- t))
+    offset = abs(table.times[k] - t)
+    offset <= table.max_offset || throw(ArgumentError(
+        "apply_conditions: no conditions within $(table.max_offset) of $t (nearest $(table.times[k]))"))
+    row = map(v -> v[k], table.values)
+    return Measurement(y = m.y, coordinate = m.coordinate, noise_variance = m.noise_variance,
+                       time = m.time, conditions = merge(m.conditions, row),
+                       metadata = merge(m.metadata, (applied_conditions = row,)))
+end
+
+export ConditionsTable, apply_conditions

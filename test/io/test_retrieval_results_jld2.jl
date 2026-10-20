@@ -86,3 +86,16 @@ end
         @test_throws ArgumentError load_results(joinpath(dir, "other.jld2"))
     end
 end
+
+@testset "save_results stores coordinates" begin
+    results = results_fixture()
+    coords = [collect(1.0:length(r.y)) for r in results]
+    mktempdir() do dir
+        path = save_results(joinpath(dir, "c.jld2"), results; coordinates = coords)
+        loaded = load_results(path)
+        @test [l.coordinate for l in loaded.results] == coords
+        @test isempty(load_results(save_results(joinpath(dir, "n.jld2"), results)).results[1].coordinate)
+        @test_throws DimensionMismatch save_results(joinpath(dir, "bad.jld2"), results;
+                                                    coordinates = [[1.0], [2.0]])
+    end
+end

@@ -14,7 +14,7 @@
 #       "message"                     String
 #       "n_iterations"                Int
 #       "rodgers_d2_per_state", "dfs_total", "chi2_obs_per_dof", "chi2_total_per_dof",
-#       "prior_influence", "condition_number"    Float64
+#       "prior_influence", "condition_number", "rmse"    Float64
 #       "cost_history", "y", "y_model"           Vector{Float64}
 #       "K", "posterior_covariance", "averaging_kernel"   Matrix{Float64}
 #       "obs_precision", "prior_precision"       Matrix{Float64}, or Vector{Float64} of the
@@ -25,6 +25,8 @@
 #                                     is true (a `CovariancePrecision`; "obs_precision" is then
 #                                     an empty matrix)
 #       "time"                        ISO 8601 string ("" when not given)
+#       "coordinate"                  Vector{Float64} of the observations (wavenumber in cm-1, or
+#                                     time in s); empty when not given
 #       "metadata"                    Dict{String,Any}: the measurement's metadata
 
 const RESULTS_FORMAT = "SpectralFits.retrieval_results"
@@ -79,7 +81,7 @@ function _load_precision(d, name)
     return d[name * "_is_diagonal"] ? Diagonal(Vector{Float64}(d[name])) : Matrix{Float64}(d[name])
 end
 
-function _result_dict(r::RetrievalResult, time, metadata)
+function _result_dict(r::RetrievalResult, time, metadata, coordinate)
     d = Dict{String,Any}(
         "state_labels" => state_labels(r.x),
         "x" => Vector{Float64}(collect(r.x)),
@@ -100,7 +102,9 @@ function _result_dict(r::RetrievalResult, time, metadata)
         "chi2_total_per_dof" => r.chi2_total_per_dof,
         "prior_influence" => r.prior_influence,
         "condition_number" => r.condition_number,
+        "rmse" => r.rmse,
         "time" => time === nothing ? "" : string(time),
+        "coordinate" => coordinate === nothing ? Float64[] : collect(Float64, coordinate),
         "metadata" => plain_value(metadata),
     )
     _store_precision!(d, "obs_precision", r.obs_precision)
@@ -165,7 +169,7 @@ end
 # ---------------------------------------------------------------- save and load
 
 """
-    save_results(path, results; times = nothing, metadata = nothing,
+    save_results(path, results; times = nothing, metadata = nothing, coordinates = nothing,
                  attributes = Dict{String,Any}()) -> path
 
 Write retrieval results to a JLD2 file holding only plain data (layout in the header of
@@ -175,6 +179,8 @@ Write retrieval results to a JLD2 file holding only plain data (layout in the he
 - `times`: `nothing` or one `DateTime` per result (the measurement time).
 - `metadata`: `nothing` or one `NamedTuple`/`Dict` per result (for example the measurement's
   metadata: source file, record index, number averaged); converted with `plain_value`.
+- `coordinates`: `nothing` or one vector per result, the coordinate of its observations in
+  the order of `y` (wavenumber in cm-1 for spectra, time in s for WMS).
 - `attributes`: file-level `NamedTuple`/`Dict` (for example the source file and failed
   measurements); converted with `plain_value`.
 
@@ -189,15 +195,23 @@ save_results("20160921_results.jld2", results;
 ```
 """
 function save_results(path::AbstractString, results::AbstractVector{<:RetrievalResult};
-                      times = nothing, metadata = nothing, attributes = Dict{String,Any}())
+                      times = nothing, metadata = nothing, coordinates = nothing,
+                      attributes = Dict{String,Any}())
     n = length(results)
     times === nothing || length(times) == n ||
         throw(ArgumentError("times: has $(length(times)) entries for $n results"))
     metadata === nothing || length(metadata) == n ||
         throw(ArgumentError("metadata: has $(length(metadata)) entries for $n results"))
+    coordinates === nothing || length(coordinates) == n ||
+        throw(ArgumentError("coordinates: has $(length(coordinates)) entries for $n results"))
+    for i in 1:(coordinates === nothing ? 0 : n)
+        length(coordinates[i]) == length(results[i].y) || throw(DimensionMismatch(
+            "coordinates[$i]: has $(length(coordinates[i])) values, result $i has $(length(results[i].y)) observations"))
+    end
     dicts = Dict{String,Any}[_result_dict(results[i],
                                           times === nothing ? nothing : times[i],
-                                          metadata === nothing ? (;) : metadata[i])
+                                          metadata === nothing ? (;) : metadata[i],
+                                          coordinates === nothing ? nothing : coordinates[i])
                              for i in 1:n]
     jldopen(path, "w") do file
         file["format"] = RESULTS_FORMAT
@@ -212,8 +226,8 @@ end
     load_results(path) -> (results = Vector{NamedTuple}, attributes = Dict{String,Any})
 
 Read a file written by `save_results`. Each result is a `NamedTuple` with the field names of
-`RetrievalResult` plus `state_labels`, `time` (`DateTime`, or `nothing` when not saved) and
-`metadata` (`Dict{String,Any}`):
+`RetrievalResult` plus `state_labels`, `time` (`DateTime`, or `nothing` when not saved),
+`coordinate` (`Vector{Float64}`, empty when not saved) and `metadata` (`Dict{String,Any}`):
 
 - `x`, `x_prior`, `dfs_per_element`: `ComponentVector`s rebuilt from the stored flat vectors
   and labels with `state_from_labels`, so `r.x.CH4` works as on the original result.
@@ -266,8 +280,10 @@ function _result_from_dict(d::AbstractDict)
             chi2_total_per_dof = Float64(d["chi2_total_per_dof"]),
             prior_influence = Float64(d["prior_influence"]),
             condition_number = Float64(d["condition_number"]),
+            rmse = Float64(get(d, "rmse", NaN)),
             state_labels = labels,
             time = time,
+            coordinate = Vector{Float64}(get(d, "coordinate", Float64[])),
             metadata = d["metadata"])
 end
 

@@ -16,8 +16,10 @@ the tag `v0.1-legacy`; [Coming from v0.1](#coming-from-v01) maps the old names t
 - [Concepts](#concepts)
 - [Retrieving from DCS files](#retrieving-from-dcs-files)
 - [Batch processing](#batch-processing)
+- [Configuration files](#configuration-files)
 - [Configuration options](#configuration-options)
 - [Profile retrievals](#profile-retrievals)
+- [Synthetic profile experiments](#synthetic-profile-experiments)
 - [Other instruments: FTS, grating, WMS](#other-instruments-fts-grating-wms)
 - [Results and diagnostics](#results-and-diagnostics)
 - [Lookup tables](#lookup-tables)
@@ -197,10 +199,102 @@ print(report(summary))
 read them with `load_results`). A failed retrieval or unreadable file is logged and recorded,
 and the batch continues.
 
+Each result also stores its observation wavenumbers (`r.coordinate`) and the conditions
+used (`r.metadata["conditions"]`). `find_run(output_root, experiment)` returns the newest run
+folder of an experiment, `run_experiments(output_root)` lists them.
+
+To fix pressure and temperature to an independent record (a tower, a weather station), pass
+`conditions = read_conditions_csv("tower.csv")`: a CSV with a `time` column (ISO 8601) and
+columns named like the conditions (`pressure_hPa`, `temperature_K`). Each averaged
+measurement takes the row nearest its first sample time, within `max_offset`.
+
 Retrievals run on 2 worker processes by default. `run` starts any missing workers in the
 current project with SpectralFits loaded, and removes them when it finishes. Set
 `n_workers = 8` for more, or `parallel = :serial` for none. The serial and parallel results
-are identical.
+are identical. The configuration, lookup tables included, is sent to each worker once before
+the measurements are distributed.
+
+## Configuration files
+
+Every app reads a TOML configuration file, and `bin/run_config.jl` runs one:
+
+```bash
+julia --project=SpectralFit.jl SpectralFit.jl/bin/run_config.jl configs/hit24.toml hit24_lm
+```
+
+or from Julia, `SpectralFits.Apps.run_config("configs/hit24.toml"; variants = ["hit24_lm"])`.
+`--dry-run` (or `dry_run = true`) builds every configuration without running, so a typo in
+any variant fails before anything runs. The `app` key picks the app (`"batch_retrieval"` or
+`"profile_osse"` or `"lookup_table"`). Unknown keys are errors that name the table and the allowed keys.
+
+Shared settings go in a base file named by `extends`; tables are merged key by key and the
+extending file wins. `[[variants]]` describe several runs in one file: each is merged over
+the file and runs as experiment `<experiment>_<name>`. A variant replaces a whole table with
+`_replace = true` (for example `absorbers.CH4 = { _replace = true, file = "ch4.jld2" }`, which
+drops the line list's `molecule` and `range_cm`) and removes one with `_remove = true`.
+Relative paths are resolved against
+the file that sets them (keys `file`, `files`, `extends` and keys ending in `_file`,
+`_files`, `_directory`, `_root`).
+
+```toml
+# campaign_2016.toml
+app = "batch_retrieval"
+experiment = "campaign_2016"
+data_directory = "../../data"
+output_root = "../../data/runs"
+averaging_minutes = 15
+n_workers = 4
+
+[reader]
+path_length_cm = 195017.0
+pressure_scale = 0.9938
+
+[retrieval]
+baseline_coefficients = 100
+retrieve_pressure = true
+retrieve_temperature = true
+fine_grid_spacing_cm = 0.003
+
+[prior]                              # gas values and sigmas: dry mole fractions of the
+reference_pressure_hPa = 850.0       # air column at the reference pressure and temperature
+reference_temperature_K = 285.0
+pressure_hPa = { value = 850.0, sigma = 100.0 }
+temperature_K = { value = 285.0, sigma = 30.0 }
+[prior.gases]
+H2O = { value = 0.01, sigma = 1.0 }
+CH4 = { value = 1900e-9, sigma = 1e-6 }
+```
+
+```toml
+# hit24.toml
+extends = "campaign_2016.toml"
+experiment = "ch4"
+data_files = ["../../data/20160921.h5"]
+
+[retrieval]
+window_cm = [6050.0, 6115.0]
+
+[absorbers.H2O]
+file = "../../spectra/tccon_H2O_ch4win.jld2"      # .jld2 lookup table
+[absorbers.CH4]
+file = "../../spectra/hit24_12CH4_ch4win.jld2"
+
+[[variants]]
+name = "hit24"
+[[variants]]
+name = "hit24_lm"
+absorbers.CH4.file = "../../spectra/hit24_12CH4_lm_ch4win.jld2"
+```
+
+Absorbers are `.jld2` lookup tables, `.par` HITRAN line lists (`molecule`, `range_cm`,
+optional `isotope`, `line_margin_cm`, `wing_cutoff_cm`) or `.h5`/`.hdf` ABSCO tables (`gas`,
+`range_cm`, `h2o_indices`, for example `[1]` for the dry-air slice). The full key lists are
+in the docstrings of `batch_config` and `profile_osse_config`, and of the shared parsers
+`absorber_from_config`, `noise_model_from_config`, `reader_from_config`,
+`solver_from_config` and `retrieval_config_from_config`. Each run copies its resolved
+configuration into its run folder. Building a batch configuration also checks that every
+absorber covers each window plus the fine-grid margin, so `--dry-run` catches a lookup table
+that is too narrow.
 
 ## Configuration options
 
@@ -217,6 +311,7 @@ are identical.
 | `retrieve_pressure`, `retrieve_temperature` | `false` | must match `pressure_hPa`, `temperature_K` in the state |
 | `h2o_broadening` | none | `Dict(:CH4 => 0.34)` adds H2O broadening to that absorber |
 | `fine_grid_spacing_cm` | instrument default | fine-grid spacing in cm-1 |
+| `fine_grid_margin_cm` | instrument default (DCS: 1) | how far the fine grid extends beyond the observations; lookup tables must cover it |
 | `masked_windows_cm`, `mask_mode`, `mask_factor` | none, `:deweight`, `1e-5` | de-weight (or `:drop`) points in these windows |
 | `baseline_prior` | `:from_measurement` | baseline prior from each measurement, or `:as_given` |
 | `solver` | `GaussNewton()` | or `LevenbergMarquardt(damping = AdaptiveDamping())` |
@@ -271,6 +366,66 @@ In that example single layers have DFS of 0.3-0.7, while the total CH4 column is
 about 1%. A temperature profile is retrieved by adding `temperature_K` (one value per layer)
 to the state.
 
+Vertically correlated priors: `correlated_prior_precision(prior_sigma, z_km, (CH4 = 0.5,))`
+gives Sa^-1 with Gaussian correlations of length 0.5 km between the CH4 layers. A small
+diagonal nugget (default 1e-6 of the variance) keeps it invertible: the Gaussian kernel is
+numerically singular once the correlation length exceeds about twice the layer spacing.
+`state_indices(x, :CH4)` and `column_averaging_kernel(A, indices, layer_columns)` give the
+column averaging kernel.
+
+## Synthetic profile experiments
+
+`SpectralFits.Apps.ProfileOSSE` runs a synthetic profile retrieval from a configuration file:
+a layered atmosphere (US Standard or exponential pressure, lapse-rate temperature, `mode`
+`profile`, `isotherm` or `isobar`), true gas profiles, the wavenumbers and noise of a real DCS
+measurement as the template (or an SNR), truth and retrieval cross sections (a different
+truth line list gives a line-list error experiment), and a prior with optional vertical
+correlations. `synthetic_measurement(model, x_true, template, space, sigma)` is the core
+step: the truth in intensity plus Gaussian noise, so `obs_precision` weights it correctly in
+log space too.
+
+```toml
+app = "profile_osse"
+experiment = "ch4"
+output_root = "runs"
+window_cm = [6050.0, 6120.0]
+fine_grid_spacing_cm = 0.002
+measurement_space = "log"
+target = "CH4"
+
+[template]
+dcs_file = "../data/20160921.h5"
+average_index = 10
+reader = { pressure_scale = 0.9938 }
+
+[atmosphere]
+n_layers = 35
+top_m = 10000.0
+pressure = { kind = "us_standard" }
+temperature = { kind = "lapse_rate", surface_K = 288.15, lapse_K_per_m = 0.0065 }
+
+[gases.CH4]
+truth = { kind = "linear", bottom = 2000e-9, top = 1900e-9 }
+prior = 1950e-9
+sigma = 500e-9
+correlation_length = 0.5
+cross_section = { file = "../spectra/hit08_12CH4.par", molecule = 6, range_cm = [6050.0, 6120.0] }
+
+[solver]
+name = "levenberg_marquardt"
+initial_damping = 40.0
+
+[[variants]]
+name = "profile"
+[[variants]]
+name = "isobar"
+atmosphere.mode = "isobar"
+```
+
+Each run writes `configuration.toml`, `summary.txt` (DFS, column error and posterior sigma
+per gas) and `results/<experiment>_results.jld2` with the truth, layer pressures,
+temperatures and columns in its attributes.
+
 ## Other instruments: FTS, grating, WMS
 
 Instruments are swapped in the same builder call:
@@ -317,12 +472,19 @@ A `RetrievalResult` has these fields:
 - `posterior_covariance`, `averaging_kernel`, `dfs_per_element` (named like `x`),
   `dfs_total`.
 - `chi2_obs_per_dof`, `chi2_total_per_dof`, `prior_influence`, `condition_number`.
+- `rmse`: root-mean-square residual `y - y_model` in measurement units, over the observations
+  at full weight (masked observations are left out), a fit metric independent of the noise
+  model.
 
-The posterior covariance includes the prior term and is evaluated at the solution. Prior
+The posterior covariance includes the prior term and is evaluated at the solution. It is
+inverted with the normal matrix scaled to unit diagonal (`scaled_inverse`), because states
+that mix layer columns near 1e22 molecules/cm2 with baseline coefficients near 1 make the
+unscaled matrix too ill-conditioned to invert accurately. Prior
 sigmas and posterior sigmas are in state units; divide by the air column for mole fractions.
 
 ```julia
-save_results("results.jld2", results; times = [m.time for m in measurements])
+save_results("results.jld2", results; times = [m.time for m in measurements],
+             coordinates = [m.coordinate for m in measurements])
 loaded = load_results("results.jld2")      # plain data, also readable with JLD2 alone
 ```
 
@@ -330,7 +492,33 @@ loaded = load_results("results.jld2")      # plain data, also readable with JLD2
 
 Line-by-line `HitranVoigt` is exact but slow when pressure or temperature is retrieved. A
 `LookupTable` interpolates cross sections precomputed on a (wavenumber, pressure,
-temperature) grid. Build one once with vSmartMOM and load it:
+temperature) grid. The `lookup_table` app builds one from a configuration file: it tabulates
+the source on the grid (threads over the p, T nodes), fits the cubic B-spline, checks it
+against the source between the nodes, and writes the table with a `<table>.toml` provenance
+file (configuration, git hash, interpolation error). Sources are HITRAN line lists (with
+`line_shape`, `line_margin_cm` and `relabel`, for example TCCON's HDO), ABSCO tables,
+existing lookup tables, or cross sections computed elsewhere on the same grid.
+
+```toml
+app = "lookup_table"
+experiment = "tccon_HDO_ch4win"
+output_file = "../tccon_HDO_ch4win.jld2"
+wavenumber_cm = { start = 6049.0, stop = 6116.0, step = 0.003 }
+pressure_hPa = { start = 600.0, stop = 1050.0, step = 10.0 }
+temperature_K = { start = 230.0, stop = 350.0, step = 10.0 }
+[source]
+file = "../tccon_2020.par"
+molecule = 1
+isotope = 4
+relabel = ["491", " 14"]     # TCCON labels HDO as molecule 49
+```
+
+```bash
+julia -t auto --project=SpectralFit.jl SpectralFit.jl/bin/run_config.jl tables/hdo.toml
+```
+
+In code, `tabulate_cross_sections(model, nu, p, T)` and `lookup_table_from_grid(cs, nu, p, T)`
+do the same for any cross-section model. To build a table directly with vSmartMOM instead:
 
 ```julia
 using SpectralFits, JLD2
@@ -387,7 +575,9 @@ retrieved. New instruments, atmospheres and baselines follow the same pattern; s
 | `linear = true` (meant log space) | `measurement_space = LogSpace()` |
 | `fit_column = true/false` | `state_units = ColumnDensity()` or `VMR()` |
 | `"shift"` key | `DCS(calibration = LinearStretch())` |
-| `process_all_files` | `Apps.BatchRetrieval.run` |
+| `process_all_files` | `Apps.BatchRetrieval.run`, or a configuration file and `bin/run_config.jl` |
+| `make_prior_error` with correlation lengths | `correlated_prior_precision` |
+| `generate_profile_model` + hand-made noise | `LayeredColumn`, `synthetic_measurement`, `Apps.ProfileOSSE` |
 
 v0.1 used older physical constants (gravity 9.8196, gas constant 8.314472); v0.2 uses CODATA
 2018 and standard gravity, which changes hydrostatic layer columns by about 0.13%.

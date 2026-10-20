@@ -1322,10 +1322,10 @@ weakdeps = ["ChainRulesCore"]
     SpecialFunctionsChainRulesCoreExt = "ChainRulesCore"
 
 [[deps.SpectralFits]]
-deps = ["ComponentArrays", "Dates", "DiffResults", "Distributed", "ForwardDiff", "HDF5", "Interpolations", "JLD2", "LinearAlgebra", "Printf", "SparseArrays", "Statistics", "vSmartMOM"]
+deps = ["ComponentArrays", "Dates", "DiffResults", "Distributed", "ForwardDiff", "HDF5", "Interpolations", "JLD2", "LinearAlgebra", "Printf", "Random", "SparseArrays", "Statistics", "TOML", "vSmartMOM"]
 path = ".."
 uuid = "538e1738-f75f-4ead-b58e-a0df26ad9382"
-version = "0.1.0"
+version = "0.2.0"
 
 [[deps.StackViews]]
 deps = ["OffsetArrays"]

@@ -20,8 +20,10 @@ using ComponentArrays
 using ...CoreLayer
 using ...IOLayer
 import ...CoreLayer
+import ...IOLayer: config_value, config_table, check_keys
 
 include("batch_config.jl")
 include("batch_retrieval.jl")
+include("batch_config_file.jl")
 
 end # module BatchRetrieval
