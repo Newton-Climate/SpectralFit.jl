@@ -1,10 +1,16 @@
 # Phase 0 regression reference for the SpectralFits.jl re-architecture.
 #
-# Run ONCE against the tag v0.1-legacy (the old API). It writes reference_v0_1.jld2,
-# which holds only plain numbers, strings, Bools and Float64/Int arrays, so it loads
-# with `using JLD2` alone. See REFERENCE_README.md for the meaning of every key.
+# Run ONCE against the tag v0.1-legacy (the old API) with three constants in the legacy
+# src/constants.jl patched to the values the new code uses (CODATA 2018 / standard gravity):
+#     const r  = 6.02214076e23 * 1.380649e-23   # N_A * k_B   (was 8.314472)
+#     const Nₐ = 6.02214076e23                  # (was 6.0221415e23)
+#     const g₀ = 9.80665                        # standard gravity (was 9.8196)
+# Nothing else in the legacy code is changed. The script asserts these values are loaded.
+# It writes reference_v0_1.jld2, which holds only plain numbers, strings, Bools and
+# Float64/Int arrays, so it loads with `using JLD2` alone. See README.md for the meaning
+# of every key and for how the environment is built.
 #
-# Usage (from an environment where the v0.1-legacy SpectralFits is installed):
+# Usage (from an environment where the patched v0.1-legacy SpectralFits is installed):
 #     julia --project=<env> generate_reference_v0_1.jl [output.jld2]
 #
 # Configurations recorded:
@@ -28,7 +34,7 @@ R = Dict{String,Any}()   # everything that goes into the file; keys are flat "gr
 
 # ---------------------------------------------------------------- metadata and constants
 pkgver(name) = string(Pkg.dependencies()[findfirst(d -> d.name == name, Pkg.dependencies())].version)
-R["meta/description"] = "SpectralFits v0.1-legacy regression reference (Phase 0). See REFERENCE_README.md."
+R["meta/description"] = "SpectralFits v0.1-legacy regression reference (Phase 0), constants patched to CODATA 2018 / standard gravity. See test/regression/README.md."
 R["meta/legacy_tag"] = "v0.1-legacy"
 R["meta/julia_version"] = string(VERSION)
 R["meta/vSmartMOM_version"] = pkgver("vSmartMOM")
@@ -36,6 +42,12 @@ R["meta/Interpolations_version"] = pkgver("Interpolations")
 R["meta/ForwardDiff_version"] = pkgver("ForwardDiff")
 R["meta/generated_utc"] = string(Dates.now(Dates.UTC))
 R["meta/line_list_file"] = "test/data/hit20_subset.par"
+R["meta/constants_patch"] = "v0.1-legacy src/constants.jl with r = N_A*k_B (CODATA 2018), " *
+                            "N_A = 6.02214076e23, g0 = 9.80665; nothing else modified"
+
+@assert SF.r == 6.02214076e23 * 1.380649e-23 "legacy constants not patched (r = $(SF.r))"
+@assert SF.Nₐ == 6.02214076e23 "legacy constants not patched (N_A = $(SF.Nₐ))"
+@assert SF.g₀ == 9.80665 "legacy constants not patched (g0 = $(SF.g₀))"
 
 R["const/c_cm_per_s"] = Float64(SF.c)
 R["const/R_J_per_mol_K"] = SF.r
