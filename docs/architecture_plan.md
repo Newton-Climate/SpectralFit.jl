@@ -1178,9 +1178,10 @@ config = BatchRetrievalConfig(
     x_prior = x_prior,
     prior_sigma = prior_sigma,
     output_root = "../data/runs",
+    parallel = :serial,      # or :processes, after addprocs(n) and @everywhere using SpectralFits
 )
 
-summary = run(config)
+summary = run(config)        # results in ../data/runs/<yyyy-mm-dd>_merlin-r6_<git hash>/
 print(report(summary))
 ```
 
@@ -1188,8 +1189,11 @@ The custom `process_with_empirical_noise` loop and `data_driven_noise.jl` are no
 needed. Interactive work on one measurement uses the same pieces directly:
 
 ```julia
-measurements = read_measurements(DCS, "../data/20160921.h5"; reader_config = config.reader)
+# the reader applies its noise model to the full-spectrum records, before averaging
+reader = DCSReaderConfig(path_length_cm = 195017.0, noise_model = config.noise)
+measurements = read_measurements(DCS, "../data/20160921.h5"; reader_config = reader)
 m = select_window(time_average(measurements, Minute(15))[1], 6076.05, 6077.95)
+# the same in one call: BatchRetrieval.averaged_measurements(config, "../data/20160921.h5")
 problem = build_problem(retrieval, absorbers, m, x_prior, prior_sigma)
 result = solve(problem, GaussNewton())
 result.x.CH4 / n_air, sqrt(result.posterior_covariance[2, 2]) / n_air, result.dfs_per_element.CH4
