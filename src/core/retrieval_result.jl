@@ -27,7 +27,8 @@ Outcome of a retrieval with all optimal-estimation diagnostics. Fields:
 - `cost_history`: total cost at the prior and after each accepted step.
 - `y`, `y_model`: measurement and model at `x`, in measurement space.
 - `K`: Jacobian at `x` (n_obs x n_state).
-- `obs_precision`, `prior_precision`: the problem's own precisions (issue 7).
+- `obs_precision`, `prior_precision`: the problem's own precisions (issue 7); `obs_precision`
+  may be a `CovariancePrecision`.
 - `posterior_covariance`: `inv(K' obs_precision K + prior_precision)`, state units squared.
 - `averaging_kernel`: `posterior_covariance * K' * obs_precision * K`.
 - `dfs_per_element`: diagonal of the averaging kernel, with the axes of `x` (so
@@ -41,7 +42,7 @@ Outcome of a retrieval with all optimal-estimation diagnostics. Fields:
 For a `Failed` result the matrix diagnostics that could not be computed are `NaN`.
 Built only by `retrieval_result`.
 """
-struct RetrievalResult{X<:ComponentVector, PO<:AbstractMatrix, PA<:AbstractMatrix}
+struct RetrievalResult{X<:ComponentVector, PO<:ObservationPrecision, PA<:AbstractMatrix}
     x::X
     x_prior::X
     status::RetrievalStatus

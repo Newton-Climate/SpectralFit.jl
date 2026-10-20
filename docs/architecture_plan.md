@@ -419,9 +419,9 @@ What this changes elsewhere in the design:
   WMS, wavenumber for spectrometers.
 - The observable from `DigitalLockIn` is low-pass filtered, so neighbouring samples have
   strongly correlated noise. A diagonal observation covariance on every raw sample would
-  overstate the information content and make chi squared meaningless. The plan supports
-  decimating the observable to the low-pass bandwidth and accepts a full or banded
-  `obs_precision`; open question 9 covers the default.
+  overstate the information content and make chi squared meaningless. The default is a
+  banded covariance from the filter autocorrelation (`wms_noise_covariance`) applied as a
+  `CovariancePrecision`; see open question 9.
 - The Butterworth filter design is a few dozen lines (bilinear transform of the analogue
   prototype, second-order sections) and is implemented in core, generic in element type, so
   ForwardDiff passes through it and DSP.jl is not needed (open question 10).
@@ -1124,8 +1124,14 @@ Decided 2026-10-20. Question 12 is still open.
    semi-definite check), and LM damps those elements with Marquardt scaling.
 8. Masked windows are de-weighted by 1e-5 (`mask_mode = :deweight`, the v0.1 behaviour);
    `mask_mode = :drop` is available.
-9. WMS noise uses a banded observation covariance built from the lock-in low-pass filter's
-   autocorrelation, not decimation.
+9. WMS noise uses a banded observation covariance, not decimation.
+   `wms_noise_covariance(prepared[, lockin], detector_variance; signals, band_tolerance)`
+   (`core/instruments/wms_noise.jl`) builds the sparse covariance from the lock-in low-pass
+   autocorrelation at the lags between observation times (mixing gain 2 for `X_n`, `Y_n`, 1
+   for DC; components uncorrelated; ratio observables linearised to first order about
+   `signals`). `CovariancePrecision(Se)` (`core/covariance_precision.jl`) holds it by its
+   sparse Cholesky factor and is accepted as `obs_precision` everywhere, so the dense inverse
+   is never formed.
 10. `HarmonicExpansion` is the default WMS demodulator for retrievals; the Butterworth filter of
     `DigitalLockIn` is in core, without DSP.jl.
 11. The batch app runs on 2 worker processes by default (`parallel = :processes`,

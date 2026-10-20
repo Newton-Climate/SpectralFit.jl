@@ -29,7 +29,10 @@ A retrieval: find the state `x` that minimizes
   generic in element type so ForwardDiff dual numbers pass through.
 - `y`: measurement in measurement space (length `n_obs`).
 - `obs_precision`: inverse observation covariance Se_inv (`n_obs x n_obs`), symmetric positive
-  definite, e.g. `Diagonal(1 ./ sigma_y .^ 2)`.
+  definite, e.g. `Diagonal(1 ./ sigma_y .^ 2)`; or a `CovariancePrecision(Se)` that holds a
+  sparse (for example banded, see `wms_noise_covariance`) covariance by its Cholesky factor,
+  so the dense inverse is never formed. For a `CovariancePrecision` the symmetry and positive
+  definiteness checks are those of its constructor.
 - `x_prior`: prior and first-guess state, a `ComponentVector` (converted to Float64).
 - `prior_precision`: inverse prior covariance Sa_inv (`n_state x n_state`), symmetric positive
   semi-definite. A zero matrix gives an unconstrained least-squares fit.
@@ -48,7 +51,7 @@ problem = RetrievalProblem(model, [1.2, 0.9, 0.0, 1.1], Diagonal(fill(1e4, 4)),
                            x_prior, Diagonal([1.0, 1.0, 1.0]))
 ```
 """
-struct RetrievalProblem{F, X<:ComponentVector, PO<:AbstractMatrix, PA<:AbstractMatrix,
+struct RetrievalProblem{F, X<:ComponentVector, PO<:ObservationPrecision, PA<:AbstractMatrix,
                         W<:JacobianWorkspace}
     forward_model::F
     y::Vector{Float64}
@@ -58,7 +61,7 @@ struct RetrievalProblem{F, X<:ComponentVector, PO<:AbstractMatrix, PA<:AbstractM
     jacobian_workspace::W
 
     function RetrievalProblem(forward_model, y::AbstractVector{<:Real},
-                              obs_precision::AbstractMatrix{<:Real},
+                              obs_precision::Union{AbstractMatrix{<:Real}, CovariancePrecision},
                               x_prior::ComponentVector,
                               prior_precision::AbstractMatrix{<:Real})
         x0 = ComponentVector(copyto!(Vector{Float64}(undef, length(x_prior)), x_prior), getaxes(x_prior))
@@ -117,6 +120,14 @@ function _check_precision(P::AbstractMatrix, n::Integer, name::String, size_name
     else
         _is_positive_definite(P) || throw(ArgumentError("$name: is not positive definite"))
     end
+    return nothing
+end
+
+# a CovariancePrecision was checked (finite, symmetric, positive definite) when it was built
+function _check_precision(P::CovariancePrecision, n::Integer, name::String, size_name::String;
+                          semidefinite::Bool)
+    size(P) == (n, n) || throw(ArgumentError(
+        "$name: has size $(size(P)) but must be ($n, $n) to match $size_name = $n"))
     return nothing
 end
 
