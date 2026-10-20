@@ -1,6 +1,4 @@
 
-#OCO_path = joinpath(dirname(pathof(SpectralFits)), "..", "CrossSections_data", "OCO_spectra.hdf")
-#global OCO_interp = OCO_spectra(OCO_path)
 
 
     """
@@ -16,7 +14,7 @@
 transmission::Vector: the calculated tranmission
 """
 function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathlength::Real, grid_length::Int; 
-                                p::Real=1000, T::Real=290, use_OCO_table=false, adjust_ch4_broadening=false, fit_column=false,
+                                p::Real=1000, T::Real=290, use_OCO_table=false, adjust_ch4_broadening=false, fit_column::Bool,
                                 σ_cache=nothing)
 
     FT = dicttype(x)
@@ -24,12 +22,13 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
     H2O = haskey(x, "H2O") ? x["H2O"] : 0.0
     vcd_wet = calc_vcd(p, T, pathlength)
 
-    if fit_column
+    # vmr_H2O is the dry-air mole fraction in both modes; column_per_unit converts a state entry to a column
+    if fit_column # state entries are columns (molecules/cm²)
         vmr_H2O = H2O / (vcd_wet - H2O)
-        vcd_dry = 1.0
-    else
-        vmr_H2O = x["H2O"]
-        vcd_dry = calc_vcd(p, T, pathlength, vmr_H2O)
+        column_per_unit = 1.0
+    else # state entries are dry-air mole fractions
+        vmr_H2O = H2O
+        column_per_unit = vcd_wet / (1 + vmr_H2O) # dry-air column
     end
     
    
@@ -51,7 +50,7 @@ function calculate_transmission(x::AbstractDict, spectra::AbstractDict, pathleng
             σ = get!(() -> absorption_cross_section(spectra[molecule].model, spectra[molecule].grid, p, T), σ_cache, molecule)
         end
 
-        τ .+= x[molecule] .* σ
+        τ .+= (x[molecule] * column_per_unit) .* σ
     end
     return exp.(-τ)
 end
@@ -154,50 +153,6 @@ end
 
 
 
-function fit_pressure!(x::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::Dict)
-    if inversion_setup["use_OCO"] == false && inversion_setup["use_TCCON"] == false
-        println("inside pressure function")
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
-    elseif inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting pressure with OCO database")
-        spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, measurement.temperature, x["pressure"])
-    else
-        println("This wavenubmer range is out of the OCO or TCCON database range. Using HiTran")
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=measurement.temperature)
-    end
-    return spectra
-end
-
-
-function fit_temperature!(x::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::Dict)
-    if inversion_setup["use_OCO"] == false && inversion_setup["use_TCCON"] == false
-        spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
-    elseif inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting temperature with OCO database")
-        spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], measurement.pressure)
-    else
-        println("This wavenubmer range is out of the OCO or TCCON database range. Using HiTran")
-        spectra = construct_spectra!(spectra, p=measurement.pressure, T=x["temperature"])
-    end
-    return spectra
-end
-
-function fit_pT!(x::AbstractDict, measurement::AbstractMeasurement, spectra::AbstractDict, inversion_setup::Dict)
-    if inversion_setup["use_OCO"] == false && inversion_setup["use_TCCON"] == false
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
-    elseif inversion_setup["use_OCO"] && spectra[CO₂].grid[1] >= 6140 && spectra[CO₂].grid[end] <= 6300
-        println("fitting temperature with OCO database")
-        spectra[CO₂].cross_sections = OCO_interp(spectra[CO₂].grid, x["temperature"], x["pressure"])
-    else
-        println("This wavenubmer range is out of the OCO or TCCON database range. Using HiTran")
-        spectra = construct_spectra!(spectra, p=x["pressure"], T=x["temperature"])
-    end
-    return spectra
-end
-
-
-
-
 """
 Holds cross-sections computed for one set of atmospheric conditions. `cached!` returns the
 stored value while the key (copied p, T, ...) and the spectra's models are unchanged, and
@@ -241,6 +196,9 @@ f::Function: the forward model called as f(x::Vector)
 """
     
 
+    # required: column vs mole-fraction state changes the physics, so there is no silent default
+    haskey(inversion_setup, "fit_column") || error("inversion_setup must set \"fit_column\" (true: state in molecules/cm², false: dry-air mole fractions)")
+
     # Save the labelled fields in the state vector
     x_fields = collect(keys(x₀))
     # cross-sections are reused between calls while p and T are not fitted
@@ -257,7 +215,7 @@ f::Function: the forward model called as f(x::Vector)
         len_measurement = length(measurement.grid)
         use_OCO_table = check_param(inversion_setup, "use_OCO_table")
         adjust_ch4_broadening = check_param(inversion_setup, "adjust_ch4_broadening")
-        fit_column = check_param(inversion_setup, "fit_column")
+        fit_column = inversion_setup["fit_column"]
 
 
 
