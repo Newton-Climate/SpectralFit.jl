@@ -104,3 +104,74 @@ end
     @test maximum(abs.(J[:, 2] .- (-nu .* dcubic.(nu)))) < 1e-6 * maximum(abs.(nu .* dcubic.(nu)))
     @test all(iszero, J[:, 1])
 end
+
+@testset "sparse interpolation matrix after bind_fine_grid" begin
+    fine = range(6075.0, 6079.0; step = 0.002)
+    rng = MersenneTwister(11)
+    values = 1 .- 0.4 .* exp.(-((fine .- 6077.0) ./ 0.01) .^ 2) .+ 0.01 .* randn(rng, length(fine))
+    # unsorted interior points, both grid ends, points next to the ends, grid nodes
+    nu = vcat(6075.0 .+ 4.0 .* rand(rng, 400), first(fine), last(fine), first(fine) + 1e-6,
+              last(fine) - 1e-6, fine[2] + 0.3 * step(fine), collect(fine[1:7:end]))
+    m = dcs_test_measurement(nu)
+    x = ComponentVector(CH4 = 1.0)
+    for calibration in (NoCalibration(), LinearStretch(stretch = 1.0), LinearStretch(stretch = 1 + 1e-5))
+        query = calibration isa NoCalibration ? nu : nu ./ resolve(calibration.stretch, nothing)
+        keep = first(fine) .<= query .<= last(fine)   # a stretch moves some points off the grid
+        unbound = prepare(DCS(calibration = calibration), dcs_test_measurement(nu[keep]))
+        bound = bind_fine_grid(unbound, fine)
+        @test bound.matrix isa SparseMatrixCSC{Float64,Int}
+        @test bound.wavenumber_fine_cm === fine
+        spline = interpolate_fine_grid(fine, values, query[keep])
+        @test maximum(abs.(apply_instrument(bound, fine, values, x) .- spline)) < 1e-12
+        @test apply_instrument(unbound, fine, values, x) == spline   # unbound: B-spline path
+        for _ in 1:3   # the matrix is the linear map, not a fit to one spectrum
+            v = randn(rng, length(fine))
+            @test maximum(abs.(bound.matrix * v .- interpolate_fine_grid(fine, v, query[keep]))) < 1e-12
+        end
+        dual_values = ForwardDiff.Dual{Nothing}.(values, 1.0)
+        @test (@inferred apply_instrument(bound, fine, dual_values, x)) isa
+              Vector{ForwardDiff.Dual{Nothing,Float64,1}}
+        @test (@inferred apply_instrument(bound, fine, values, x)) isa Vector{Float64}
+    end
+    # the bound grid is checked; queries outside the grid are refused
+    bound = bind_fine_grid(prepare(DCS(), m), fine)
+    @test_throws ArgumentError apply_instrument(bound, range(6075.0, 6079.0; step = 0.004),
+                                                values[1:2:end], x)
+    @test_throws DimensionMismatch apply_instrument(bound, fine, values[2:end], x)
+    @test_throws ArgumentError bind_fine_grid(prepare(DCS(), dcs_test_measurement([6074.9])), fine)
+    # rebinding the parameters keeps a matrix consistent with the calibration
+    rebound = bind_parameters(bind_fine_grid(prepare(DCS(calibration = LinearStretch()), m), fine),
+                              ComponentVector(instrument = (stretch = 1.0,)))
+    @test rebound.calibration.stretch isa FromState && rebound.matrix === nothing
+end
+
+@testset "stretch from the state keeps the spline; Jacobian matches finite differences" begin
+    fine = range(6075.0, 6079.0; step = 0.002)
+    values = 1 .- 0.4 .* exp.(-((fine .- 6077.0) ./ 0.05) .^ 2)
+    nu = collect(range(6076.0, 6078.0; length = 101))[randperm(MersenneTwister(3), 101)]
+    m = dcs_test_measurement(nu)
+    x = ComponentVector(CH4 = 1.0, instrument = (stretch = 1.0 + 2e-5,))
+    prepared = prepare(bind_parameters(DCS(calibration = LinearStretch()), x), m)
+    bound = bind_fine_grid(prepared, fine)
+    @test bound.matrix === nothing && bound.wavenumber_fine_cm === nothing
+    @test apply_instrument(bound, fine, values, x) == interpolate_fine_grid(fine, values, nu ./ x.instrument.stretch)
+    f = v -> apply_instrument(bound, fine, values, ComponentVector(v, getaxes(x)))
+    J = ForwardDiff.jacobian(f, collect(x))
+    h = 1e-9   # stretch step: shifts the queries by ~6e-6 cm-1
+    fd = (f(collect(x) .+ [0, h]) .- f(collect(x) .- [0, h])) ./ (2h)
+    @test maximum(abs.(J[:, 2] .- fd)) < 1e-5 * maximum(abs.(fd))
+    @test all(iszero, J[:, 1])
+end
+
+@testset "interpolation matrix build cost on a 2e5-point grid" begin
+    fine = range(6000.0; step = 0.001, length = 200_000)
+    rng = MersenneTwister(5)
+    nu = 6000.0 .+ 199.9 .* rand(rng, 50_000)
+    prepared = prepare(DCS(), dcs_test_measurement(nu))
+    bind_fine_grid(prepare(DCS(), dcs_test_measurement(nu[1:10])), fine)   # compile
+    t = @elapsed bound = bind_fine_grid(prepared, fine)
+    @test t < 10.0
+    @test nnz(bound.matrix) < 60 * length(nu)
+    v = 1 .+ 0.1 .* randn(rng, length(fine))
+    @test maximum(abs.(apply_instrument(bound, fine, v, nothing) .- interpolate_fine_grid(fine, v, nu))) < 1e-12
+end
