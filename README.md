@@ -1,35 +1,59 @@
-  # SpectralFits.jl
+# SpectralFits.jl
 
-SpectralFits.jl is a modern and flexible spectral fitting routine for atmospheric remote sensing. It has support for multiple species and spectral line-lists, including HiTran, TCCON, and OCO, and can fit an arbitrary number of species. We have plans to add more instrument operators to the package as well.
+Optimal-estimation retrievals of trace gases from spectral measurements: dual-comb
+spectroscopy, Fourier transform and grating spectrometers, and open-path
+wavelength-modulation spectroscopy, with one forward model and one set of solvers. Every
+retrieval reports its posterior covariance, averaging kernel, degrees of freedom for signal,
+chi squared and prior influence.
 
-## Installation Instructions
+Version 0.2 is a rewrite; it does not provide the v0.1 `Dict`-based API (tag
+`v0.1-legacy`). See [ARCHITECTURE.md](ARCHITECTURE.md) for the layout and
+[docs/architecture_plan.md](docs/architecture_plan.md) for the design.
 
-```
+## Installation
+
+```julia
 using Pkg
-Pkg.add(url="https://github.com/Newton-Climate/SpectralFit.jl.git")
-using SpectralFits
+Pkg.add(url = "https://github.com/Newton-Climate/SpectralFit.jl.git")
 ```
 
-## Example Run
-Please see the example_run.jl script for how to run the code
+## Example: one DCS measurement
 
-## Running the tests
-The package targets Julia 1.10+ (developed on 1.12). From the repository root:
+```julia
+using SpectralFits, Dates
+
+h2o = load_cross_section_model(HitranVoigt, "hit20.par"; molecule = 1, isotope = 1, range_cm = (6075.0, 6079.0))
+ch4 = load_cross_section_model(HitranVoigt, "hit20.par"; molecule = 6, isotope = 1, range_cm = (6075.0, 6079.0))
+absorbers = (H2O = Absorber(:H2O, h2o), CH4 = Absorber(:CH4, ch4))
+
+config = RetrievalConfig(windows_cm = [(6076.05, 6077.95)], baseline_coefficients = [5],
+                         fine_grid_spacing_cm = 0.003)
+
+measurements = read_measurements(DCS, "20160921.h5")
+m = time_average(measurements, Minute(15))[1]
+
+n_air = homogeneous_air_column(m.conditions.pressure_hPa, m.conditions.temperature_K,
+                               m.conditions.path_length_cm)
+x_prior = ComponentVector(H2O = 0.01n_air, CH4 = 1.9e-6n_air, baseline = (window_1 = zeros(5),))
+prior_sigma = ComponentVector(H2O = n_air, CH4 = 1e-6n_air, baseline = (window_1 = fill(1e3, 5),))
+
+result = solve(build_problem(config, absorbers, m, x_prior, prior_sigma), config.solver)
+print(report(result))
+```
+
+Batch processing of many files is `SpectralFits.Apps.BatchRetrieval` (see section 9 of the
+plan).
+
+## Tests and benchmarks
+
+The package targets Julia 1.10+ (developed on 1.12).
 
 ```
-julia --project=. -e 'using Pkg; Pkg.test()'
+julia --project=test -e 'using Pkg; Pkg.instantiate()'
+julia --project=test test/runtests.jl
+julia --project=test benchmark/forward_model_benchmarks.jl
 ```
 
-Unit tests cover `src/utils.jl`, `src/read_data.jl` and `src/spectroscopy.jl`; integration tests
-simulate spectra with the forward model and check that the retrievals (single-layer, profile,
-multi-window, and the full HDF5 → JLD2 pipeline) recover the true state. They use the small
-HITRAN 2020 subset in `test/data/hit20_subset.par`, so no external line lists are needed.
-
-## Features
- Users can customize forward model for radiation and instrument simulations
-- Applies Bayesian Maximum Likely-hood Estimation with custom priors and regularization hyper-parameters
-- Both built-in and custom molecular absorption models that can run on both GPU and CPU
-- Vertical column retrieval to calculate variations of gases with height
-- Support for multiple instrument operators 
-- Post-processing tools to calculate information content 
-
+Tests use the HITRAN 2020 subset in `test/data/hit20_subset.par`, so no external line lists
+are needed. `test/regression/` compares spectra and retrievals with reference results from
+v0.1.

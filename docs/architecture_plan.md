@@ -1,6 +1,8 @@
 # SpectralFits.jl re-architecture plan
 
-Status: proposal, not yet implemented. The current code in [src/](../src) is unchanged.
+Status: implemented on branch `rearchitecture` (phases 0 to 10). Section 8 lists the defaults
+chosen for the open questions, pending confirmation; section 11 records where the
+implementation differs from the design below.
 Audience: anyone working on SpectralFits.jl, including the people rewriting the downstream
 scripts in `DCS_experiments`. The one-page summary of the target layout is
 in [ARCHITECTURE.md](../ARCHITECTURE.md); this document holds the detail and the plan for getting
@@ -26,6 +28,7 @@ Contents:
 8. Open questions
 9. Example: a DCS script under the new API
 10. Example: an open-path wavelength-modulation forward model under the new API
+11. Implementation notes
 
 Notation. Wavenumber is in cm-1, pressure in hPa, temperature in K, column density in
 molecules per cm2, path length in cm, and mole fractions are dry-air mole fractions in
@@ -1100,38 +1103,36 @@ Other notes:
 - Keep `Float64` throughout; the struct type parameters allow other float types but the tests
   only cover Float64.
 
-## 8. Open questions
+## 8. Open questions and the defaults implemented
 
-1. May the `v0.1-legacy` tag be pushed to GitHub, or should it stay local?
-2. Physical constants: keep the current values (gravity 9.8196, gas constant 8.314472,
-   Avogadro 6.0221415e23) for regression parity, or switch to CODATA 2018 and standard gravity
-   9.80665 after the regression tests pass? Standard gravity shifts hydrostatic columns by
-   about 0.1 percent.
-3. What is the 0.9938 factor applied to DCS pressure in `read_DCS_data`: a sensor
-   calibration specific to one campaign? It becomes a `DCSReaderConfig` field either way;
-   the question is its default.
-4. DCS interpolation: keep the cubic B-spline (exact regression parity), or switch to a local
-   cubic interpolation stored as a sparse matrix, which is faster and identical in form to the
-   FTS and grating paths but differs from the current results at about 1e-6?
-5. Should H2O be retrieved as a dry-air mole fraction in VMR units (the convention proposed
-   here), or as a wet mole fraction?
-6. Temperature in a layered column: a full profile (one value per layer) or a scalar offset to
-   a prior profile, as TCCON does? Both fit the parameter-slot design; which is the default?
-7. Is the no-prior least-squares mode still needed, or should every retrieval carry a prior
-   (possibly very weak)?
-8. Masked windows: keep de-weighting by a factor of 1e-5 (the current behavior), or drop the
-   masked observations, which makes the degrees of freedom in chi squared correct?
-9. WMS noise: decimate the observable to the low-pass bandwidth and use a diagonal
-   covariance, or keep every sample with a banded covariance from the filter response?
-10. WMS: should `HarmonicExpansion` (fast, no filter lag) or `DigitalLockIn` (time domain,
-    matches lock-in hardware) be the default demodulator, and is a core Butterworth
-    implementation preferred over depending on DSP.jl?
-11. Parallelism in the batch app: `pmap` over processes as now, threads, or both selectable in
-    the configuration?
-12. Is the OCO ABSCO path still wanted? If not, `ABSCOTable` and its reader are dropped from
-    phases 2 and 8.
-13. Spectral windows today use open intervals (a point exactly on a window edge is excluded).
-    Keep that?
+Each question has a provisional default in the code, chosen for regression parity with v0.1
+or as the plan proposed. They still need confirmation; when one is confirmed, delete
+"provisional" and the question text.
+
+1. Pushing the `v0.1-legacy` tag. Provisional: the tag exists locally only.
+2. Physical constants. Provisional: the v0.1 values (gravity 9.8196, gas constant 8.314472,
+   Avogadro 6.0221415e23) for regression parity. Switching to CODATA 2018 and standard gravity
+   is a one-file change in `core/physical_constants.jl`.
+3. The 0.9938 DCS pressure factor. Provisional: kept as the default of
+   `DCSReaderConfig(pressure_scale = 0.9938)`. Its physical origin is still unknown.
+4. DCS interpolation. Provisional: the cubic B-spline (exact parity; spectra match v0.1 to
+   1e-10).
+5. H2O in VMR units. Provisional: dry-air mole fraction.
+6. Temperature in a layered column. Provisional: a full per-layer profile.
+7. The no-prior least-squares mode. Provisional: kept; a zero prior precision is allowed
+   (positive semi-definite check), and LM damps those elements with Marquardt scaling.
+8. Masked windows. Provisional: de-weighting by 1e-5 (`mask_mode = :deweight`);
+   `mask_mode = :drop` is also implemented.
+9. WMS noise. Provisional: no decimation is applied automatically; `RetrievalProblem` accepts
+   any symmetric positive definite `obs_precision`, so a banded one can be passed.
+10. WMS demodulator. Provisional: `HarmonicExpansion` is the default for retrievals; the
+    Butterworth filter is implemented in core, without DSP.jl.
+11. Parallelism in the batch app. Provisional: `:serial` (default) or `:processes` with
+    `pmap` over a `CachingPool`.
+12. The OCO ABSCO path. Provisional: kept (`ABSCOTable`, `read_absco_table`). Whether the
+    ABSCO broadener axis is a wet or a dry mole fraction needs checking against the ABSCO
+    documentation; the code assumes wet and converts.
+13. Window edges. Provisional: open intervals, as in v0.1.
 
 ## 9. Example: a DCS script under the new API
 
@@ -1230,3 +1231,81 @@ result = solve(problem, LevenbergMarquardt())
 
 The numbers are placeholders. The retrieval uses the same `RetrievalProblem`, `solve` and
 diagnostics as DCS.
+
+## 11. Implementation notes
+
+Where the implementation differs from sections 3 to 7, and why.
+
+Layout and interfaces:
+
+- The layer modules are `SpectralFits.CoreLayer` and `SpectralFits.IOLayer`, not `Core` and
+  `IO`, which would shadow Julia's `Core` module and `Base.IO` inside the package.
+- `core/interfaces.jl` holds every abstract type and generic function, so phases could be
+  written in parallel against fixed interfaces. `Precomputed` and `precompute` live in
+  `core/spectroscopy/precomputed.jl`; `layer_cross_section(model, grid, conditions, layer)`
+  lets `Precomputed` return one stored column per layer.
+- `layer_conditions` and `dry_air_column` take the state units as a fourth argument, because
+  the H2O dry mole fraction is computed from the state differently in each unit.
+- `FromState{Path}` accepts a tuple path for nested entries, for example
+  `(:instrument, :stretch)`. Components implement `bind_parameters(component, x_prior)`.
+- Instruments whose operator depends on the fine grid (FTS, grating) build it in
+  `bind_fine_grid(prepared, grid)`, called by the builder after the grid is chosen.
+  `choose_fine_grid` uses the instrument's `default_fine_grid`, or the coverage at
+  `fine_grid_spacing_cm`; WMS has no default and needs a grid or a spacing.
+- `HomogeneousPath` and `LayeredColumn` take each gas's state name from the absorber
+  `NamedTuple` key; the builder checks that the key equals `Absorber.name`.
+- `LayeredColumn` accepts `dry_air_column_cm2` for user-supplied layer columns (needed for one
+  layer, where hydrostatic thicknesses are undefined); when pressure is retrieved the
+  hydrostatic columns follow the state pressure.
+
+Cross sections:
+
+- `ABSCOTable` stores the table itself and interpolates linearly axis by axis, because real
+  ABSCO temperature grids differ per pressure level and are not rectilinear. Out-of-range
+  conditions raise `DomainError` for `LookupTable` and `ABSCOTable` (no silent clamping).
+- `HitranVoigt` records the range its lines were read for; `line_margin_cm = 0` matches v0.1,
+  which read only lines inside the grid.
+
+Baselines and measurements:
+
+- `obs_precision(space, measurement; masked_windows_cm, mask_factor)`.
+- `initial_coefficients` gives zeros for additive baselines; only multiplicative baselines
+  start from the maximum intensity.
+- `time_average` bins on `floor(time, period)` (whole clock intervals), keeps single-sample
+  bins and sums `n_averaged`.
+- The residual noise estimator fits one polynomial per flat window and pools residuals with
+  `n - n_coefficients` degrees of freedom. The DCS reader's default noise model is
+  `ShotNoise()`, which reproduces v0.1 and needs the 6255.1 to 6255.4 cm-1 region; the batch
+  app normally uses `ResidualNoise`.
+
+Estimation:
+
+- The condition-number check (1e12) and `result.condition_number` use the Jacobi-scaled
+  normal matrix, so they do not depend on state units.
+- `RetrievalProblem` has a sixth field holding the ForwardDiff buffers built once per
+  problem; one problem must not be solved from several threads at once.
+- `AdaptiveDamping` has `max_retries` (default 30) and accepts a step that raises the cost
+  only by rounding once the Rodgers test is met. The number of rejected steps is reported in
+  `result.message`.
+
+WMS:
+
+- Harmonic convention: S(t) = DC + sum_n [X_n cos(n w t) + Y_n sin(n w t)]. Intensity
+  phases are measured from the wavenumber modulation.
+- The modulation phase and the projection phase bind to `(:instrument,
+  :modulation_phase_rad)` and `(:instrument, :projection_phase_rad)`; `frequency_Hz` is a
+  plain number because lock-in references are built from it. Detector gain and offset are
+  slots.
+- `DigitalLockIn` has `pre_roll_s` so the filter settles before the first observation.
+
+Verification beyond the phase lists:
+
+- Forward-model spectra and cross sections match the v0.1 reference to 1e-10 (CH4 and CO2
+  windows, intensity and log space). Note that v0.1 `linear = true` meant log space.
+- A WMS retrieval with truth simulated by `DigitalLockIn` and retrieved with
+  `HarmonicExpansion` recovers the CH4 column to 1 percent.
+- Benchmarks (`benchmark/forward_model_benchmarks.jl`, Apple silicon, Julia 1.12): DCS CH4
+  window 0.04 ms per model call and 0.09 ms per Jacobian with pressure and temperature fixed;
+  2.2 ms and 12 ms when they are retrieved (Voigt with dual numbers, see section 7); a
+  5-layer profile 0.05 ms and 0.22 ms; WMS with `HarmonicExpansion` 0.5 ms and 0.4 ms, with
+  `DigitalLockIn` at 100 kHz 2.2 ms and 2.7 ms.
