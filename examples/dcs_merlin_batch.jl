@@ -3,17 +3,18 @@
 # docs/architecture_plan.md). Run from DCS_experiments/DCS_retrievals with
 #     julia --project=<SpectralFit.jl>/test <SpectralFit.jl>/examples/dcs_merlin_batch.jl
 #
-# Lookup tables written by older Julia/JLD2 versions may not load under Julia 1.12 (their
-# StepRangeLen axes do not reconstruct); regenerate them, or use HitranVoigt line lists:
-#     ch4 = load_cross_section_model(HitranVoigt, "../spectra/hit20_12CH4.par"; molecule = 6,
-#                                    isotope = 1, range_cm = (6075.0, 6079.0), line_margin_cm = 1.0)
+# Cross sections are line-by-line from the HITRAN-format line lists in DCS_experiments/spectra.
+# For speed, build a lookup table once (see "Lookup tables" in README.md) and load it with
+# `load_cross_section_model(LookupTable, path)` instead.
 
 using SpectralFits
 using SpectralFits.Apps.BatchRetrieval: BatchRetrievalConfig, run
 using Dates, Distributed
 
-ch4 = load_cross_section_model(LookupTable, "../spectra/merlin_12CH4.jld2")
-h2o = load_cross_section_model(LookupTable, "../spectra/hit20_H2O_narrow.jld2")
+ch4 = load_cross_section_model(HitranVoigt, "../spectra/merlin_12CH4.par"; molecule = 6,
+                               isotope = 1, range_cm = (6074.0, 6080.0))
+h2o = load_cross_section_model(HitranVoigt, "../spectra/hit20_H2O.par"; molecule = 1,
+                               isotope = 1, range_cm = (6074.0, 6080.0))
 absorbers = (H2O = Absorber(:H2O, h2o), CH4 = Absorber(:CH4, ch4))
 
 retrieval = RetrievalConfig(
