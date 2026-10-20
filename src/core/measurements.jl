@@ -63,3 +63,86 @@ end
 n_observations(m::Measurement) = length(m.y)
 
 export Measurement, select_window
+
+# ---------------------------------------------------------------- time averaging (issue 5)
+
+"""
+    time_average(measurements::AbstractVector{<:Measurement}, period::Dates.Period) -> Vector{Measurement}
+
+Average a measurement series into time bins of length `period`. Pure: the input is not
+changed. Fixes issue 5 (v0.1 `take_time_average!` used closed bins and dropped bins with one
+sample).
+
+Binning rules:
+
+- Bins are half-open intervals `[start, start + period)`. A measurement belongs to the bin
+  whose start is `floor(m.time, period)`, so bin edges are aligned to the `Dates` rounding
+  origin (`0000-01-01T00:00:00`, with weeks starting on Monday). For the usual periods
+  (seconds, minutes, hours, days) this means bins start on whole clock values: with
+  `Minute(15)` they start at :00, :15, :30, :45, and the first bin starts at
+  `floor(first time, period)`. A sample exactly on an edge goes into the later bin only.
+- Empty bins are omitted; bins with a single sample are kept. Output is sorted by bin start.
+- `y` is the mean over the bin; `noise_variance` is `sum(noise_variance) / count^2`
+  (variance of the mean of independent samples); `time` is the bin start.
+- `conditions`: each field is averaged when its values are numeric; a non-numeric field
+  (a string, a symbol) keeps the value of the earliest sample in the bin.
+- `metadata`: `n_averaged` is the sum of the inputs' `n_averaged` (1 when absent),
+  `averaging_period` is `period`; every other field keeps the value of the earliest sample in
+  the bin (for example `machine_time` and `source_file`).
+
+All measurements must share one coordinate axis and the same `conditions` field names.
+
+# Example
+```julia
+ms = read_dcs_measurements("20160921.h5", DCSReaderConfig())
+averaged = time_average(ms, Minute(15))
+averaged[1].metadata.n_averaged      # number of records in the first bin
+```
+"""
+function time_average(measurements::AbstractVector{<:Measurement}, period::Dates.Period)
+    isempty(measurements) && throw(ArgumentError("time_average: no measurements"))
+    Dates.value(period) > 0 || throw(ArgumentError("time_average: period must be positive"))
+    reference = first(measurements)
+    for m in measurements
+        m.coordinate == reference.coordinate ||
+            throw(ArgumentError("time_average: measurements do not share one coordinate axis"))
+        keys(m.conditions) == keys(reference.conditions) ||
+            throw(ArgumentError("time_average: measurements have different condition fields"))
+    end
+    order = sortperm([m.time for m in measurements])     # stable: ties keep input order
+    starts = [floor(measurements[i].time, period) for i in order]
+    result = Measurement[]
+    i = 1
+    while i <= length(order)
+        j = i
+        while j < length(order) && starts[j+1] == starts[i]
+            j += 1
+        end
+        push!(result, _average_bin(measurements[order[i:j]], starts[i], period))
+        i = j + 1
+    end
+    return [m for m in result]       # concretely typed when every bin has the same type
+end
+
+function _average_bin(bin::AbstractVector{<:Measurement}, start::DateTime, period::Dates.Period)
+    n = length(bin)
+    first_m = first(bin)
+    y = sum(m.y for m in bin) ./ n
+    noise_variance = sum(m.noise_variance for m in bin) ./ n^2
+    conditions = _average_named_tuples([m.conditions for m in bin])
+    n_averaged = sum(m -> Int(get(m.metadata, :n_averaged, 1)), bin)
+    metadata = merge(first_m.metadata, (n_averaged = n_averaged, averaging_period = period))
+    return Measurement(y = y, coordinate = first_m.coordinate, noise_variance = noise_variance,
+                       time = start, conditions = conditions, metadata = metadata)
+end
+
+function _average_named_tuples(tuples::AbstractVector{<:NamedTuple})
+    names = keys(first(tuples))
+    values = map(names) do name
+        column = [t[name] for t in tuples]
+        all(v -> v isa Real, column) ? sum(column) / length(column) : first(column)
+    end
+    return NamedTuple{names}(values)
+end
+
+export time_average
