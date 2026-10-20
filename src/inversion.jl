@@ -350,7 +350,8 @@ function adaptive_inversion(f::Function, x₀::AbstractDict, measurement::Abstra
         fᵢ, Kᵢ = result.value, result.derivs[1]
         j_old = (y - fᵢ)'*Sₒ⁻¹*(y - fᵢ) + (xᵢ - xₐ)'*Sₐ⁻¹*(xᵢ - xₐ)
         x_old, f_old = xᵢ, fᵢ
-        if linear
+        # keep a user-supplied Sₑ⁻¹ fixed instead of rebuilding it from the model
+        if linear && !haskey(inversion_setup, "obs_covariance")
             measurement.intensity = fᵢ;
             Sₒ⁻¹ = make_obs_error(measurement, linear=linear)
         end
