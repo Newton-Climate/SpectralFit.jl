@@ -77,7 +77,8 @@ abstract type AbstractAtmosphere end
 
 """`n_layers(atmosphere)::Int`: number of layers."""
 function n_layers end
-"""`layer_conditions(atmosphere, x, layer, units)::GasConditions` for state `x`."""
+"""`layer_conditions(atmosphere, x, layer, units)::GasConditions` for state `x`. `units` is
+needed because the H2O dry mole fraction is computed from the state differently per unit."""
 function layer_conditions end
 """`dry_air_column(atmosphere, x, layer, units)`: slant dry-air column in molecules/cm2."""
 function dry_air_column end
@@ -126,6 +127,16 @@ function n_observations end
 """`default_fine_grid(prepared; oversampling)`: optional suggested fine wavenumber grid."""
 function default_fine_grid end
 
+"""
+    bind_fine_grid(prepared, wavenumber_fine_cm::AbstractRange)
+
+Second build-time step for instruments whose operator depends on the fine grid (FTS and
+grating line-shape matrices). The builder calls `prepare(instrument, measurement)`, chooses
+the fine grid from `wavenumber_coverage_cm` or `default_fine_grid`, then calls this. The
+fallback returns `prepared` unchanged.
+"""
+bind_fine_grid(prepared, wavenumber_fine_cm) = prepared
+
 # ---------------------------------------------------------------- measurement space and baselines (3.8)
 
 """Supertype of measurement spaces: identity (`LinearSpace`) or natural log (`LogSpace`)."""
@@ -173,7 +184,7 @@ export AbstractAtmosphere, n_layers, layer_conditions, dry_air_column, slant_fac
 export gas_column, optical_depth
 export AbstractStateUnits, ColumnDensity, VMR
 export AbstractInstrument, prepare, apply_instrument, wavenumber_coverage_cm, n_observations
-export default_fine_grid
+export default_fine_grid, bind_fine_grid
 export AbstractMeasurementSpace, LinearSpace, LogSpace
 export to_measurement_space, observation_vector, obs_precision
 export AbstractBaseline, NoBaseline, Multiplicative, Additive
