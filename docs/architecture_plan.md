@@ -2,7 +2,7 @@
 
 Status: proposal, not yet implemented. The current code in [src/](../src) is unchanged.
 Audience: anyone working on SpectralFits.jl, including the people rewriting the downstream
-scripts in `DCS_experiments` and `OpenPathGHG`. The one-page summary of the target layout is
+scripts in `DCS_experiments`. The one-page summary of the target layout is
 in [ARCHITECTURE.md](../ARCHITECTURE.md); this document holds the detail and the plan for getting
 there.
 
@@ -136,8 +136,8 @@ Every forward model is the same chain of stages, each chosen by type:
 2. Transmission: the exponential of minus the optical depth.
 3. Instrument: maps fine-grid transmission to the instrument's observable. For DCS this is
    interpolation onto the measured wavenumbers; for FTS and grating instruments a convolution
-   with the instrument line shape; for WMS a time-domain laser simulation followed by lock-in
-   demodulation.
+   with the instrument line shape; for WMS a laser tuning and intensity model followed by
+   harmonic demodulation.
 4. Measurement space: identity or natural log of the instrument output.
 5. Baseline: a multiplicative or additive polynomial in the measurement space, or none.
 
@@ -303,8 +303,8 @@ Interface for a new instrument. It must implement:
 
 - `prepare(instrument, measurement)`: returns a prepared instrument holding everything that
   depends only on the measurement geometry: the observed wavenumbers, interpolation or
-  line-shape matrices, lock-in references and filter objects. Called once at build time. This
-  replaces the global `Dict` caches `_REF_CACHE` and `_LPF_CACHE` in the OpenPathGHG WMS code.
+  line-shape matrices, lock-in references and filter coefficients. Called once at build
+  time, so nothing is cached in global state.
 - `apply_instrument(prepared, wavenumber_fine_cm, transmission, x)`: returns the instrument
   observable, one value per observation. It must be generic in element type for ForwardDiff.
 - `wavenumber_coverage_cm(prepared, x_prior)`: `(minimum, maximum)` wavenumber the instrument
@@ -333,64 +333,94 @@ matrix times the transmission. DCS can use the same matrix form when there is no
 
 ### 3.7 Open-path wavelength-modulation spectroscopy
 
-The WMS forward model in `OpenPathGHG/retrieval/instrument.jl` fits this design. It is an
-instrument whose observable is a demodulated time series rather than a spectrum. Its stages
-become components of one instrument type:
+SpectralFits supports wavelength-modulation spectroscopy (WMS) as an instrument model built
+from the physics of the measurement, not from any one lab's code. A tunable laser is swept
+slowly across a line while its wavenumber is modulated sinusoidally at frequency f; the
+detector records laser intensity times gas transmission; harmonics of f in that signal are
+extracted, normalized, and compared with the data. The observable is a demodulated signal
+against the slow scan, not a spectrum. Each physical stage is one component type:
 
 ```julia
-struct WavelengthModulation{S, L, D, O} <: AbstractInstrument
-    sweep::S         # LaserSweep: wavenumber against time
-    laser::L         # LaserIntensity: intensity modulation against time
-    demodulator::D   # LockIn: harmonics, low-pass cutoff and order
-    observable::O    # what is compared with the data
+struct WavelengthModulation{T, L, D, O} <: AbstractInstrument
+    tuning::T        # laser wavenumber against time
+    laser::L         # laser intensity against time
+    demodulator::D   # how harmonics are extracted from the detector signal
+    observable::O    # which normalized harmonic quantity is compared with the data
 end
 ```
 
-- `LaserSweep(; start_cm, span_cm, slow_period_s, modulation_amplitude_cm,
-  modulation_frequency_Hz, sampling_rate_Hz, branch = RisingBranch())`: produces the
-  wavenumber at each sample, a slow triangle plus a fast sine, truncated to one branch. The
-  wavenumber trajectory is not monotonic, so instrument interpolation must accept unsorted
-  query points; a test covers that. Amplitude, tuning rate and a wavenumber offset can be
-  parameter slots.
-- `LaserIntensity(; mean_intensity, linear_im, nonlinear_im, linear_phase_rad,
-  nonlinear_phase_rad)`: the `I0 * (1 + i0 cos(wt + psi1) + i2 cos(2wt + psi2))` model, every
-  coefficient a parameter slot.
-- `LockIn(; harmonics = (1, 2), lowpass_cutoff_Hz = 100.0, lowpass_order = 5)`: the
-  phase-insensitive digital lock-in (`lockin_xy`), with the reference waveforms and the
-  Butterworth filter built once in `prepare`, using the acquisition sampling rate for the
-  reference time base.
-- Observables, chosen by type and dispatched in `apply_instrument`:
-  - `TwoFOverOneF(; background_subtracted = true)`: calibration-free 2f/1f magnitude, with the
-    zero-absorption background quadratures computed once in `prepare`.
-  - `TwoFOverDC()`: 2f magnitude over the low-passed DC level, which avoids the pole where the
-    1f signal nulls.
-  - `ProjectedTwoFOverOneF(phase)`: the signed projection a hardware lock-in reports, with
-    `phase` a parameter slot.
-  - `HardwareLockIn(calibration)`: applies a fitted gain polynomial and offset polynomial from
-    `calibrate_hardware_lockin`, which becomes a pure core function returning a
-    `HardwareLockInCalibration` struct.
-  - `DirectSignal()`: the detector trace itself, for testing.
+Tuning (`LaserTuning(scan, modulation)`, evaluated by `wavenumber_cm(tuning, t, x)`): the
+instantaneous wavenumber is a slow scan plus a modulation.
 
-The same lock-in code builds the observable from a measured detector trace
-(`demodulate(prepared, direct_signal)`), so the model and the data pass through identical
-causal filters, as the current code requires.
+- Slow scan: `FixedCenter(center_cm)` for line-locked WMS, `LinearRamp(start_cm, rate_cm_per_s)`,
+  or `TriangleScan(start_cm, span_cm, period_s)`.
+- Modulation: `SinusoidalModulation(amplitude_cm, frequency_Hz, phase_rad)`.
+- Center offset, amplitude and tuning rate can be parameter slots (section 3.2), so they can
+  be retrieved.
+- Because the modulation sweeps back and forth, the wavenumber at successive samples is not
+  monotonic; the transmission interpolation must accept unsorted query points.
+
+Laser intensity (`laser_intensity(laser, t, x)`): `IntensityModulation(; mean, linear_amplitude,
+linear_phase_rad, quadratic_amplitude = 0, quadratic_phase_rad = 0, scan_slope = 0)`, the
+standard model `I0 (1 + i1 cos(wt + psi1) + i2 cos(2wt + psi2))` with an optional linear
+change of mean intensity along the slow scan. Every coefficient is a parameter slot.
+
+Detector signal: `laser_intensity * transmission(wavenumber_cm(t))`, with optional detector
+gain and additive offset. Gain cancels in every normalized observable below, so it is not
+retrieved.
+
+Demodulators, at two levels of fidelity behind the same interface:
+
+- `HarmonicExpansion(; harmonics = (1, 2), n_phase_points = 64)`: the quasi-static model. At
+  each slow-scan point it computes the Fourier coefficients of the detector signal over one
+  modulation period by quadrature. It has no filter, is cheap, and is smooth for ForwardDiff.
+  It is the default for retrievals where the scan is slow compared with the lock-in
+  bandwidth.
+- `DigitalLockIn(; harmonics = (1, 2), lowpass = Butterworth(order = 5, cutoff_Hz = 100.0),
+  sampling_rate_Hz)`: the time-domain model. It simulates the detector signal at the
+  acquisition rate, mixes it with in-phase and quadrature references at each harmonic and
+  low-pass filters the products, so it captures filter lag and settling. References and filter
+  coefficients are built once in `prepare`. The same object demodulates a measured detector
+  trace, `demodulate(prepared, detector_signal)`, so model and data pass through identical
+  filters.
+
+Both return, for each harmonic n, in-phase and quadrature components `X_n` and `Y_n`, and the
+low-passed mean (DC) level.
+
+Observables, chosen by type and dispatched in `apply_instrument`:
+
+- `HarmonicRatio(n, reference)`: the magnitude of harmonic n over the magnitude of harmonic
+  `reference`, for example 2f/1f, which cancels detector gain and laser power.
+- `HarmonicOverDC(n)`: the magnitude of harmonic n over the DC level. It stays finite where
+  the first harmonic passes through zero on strong lines.
+- `HarmonicProjection(n, phase_rad, reference)`: the signed projection
+  `X_n cos(phase) + Y_n sin(phase)`, normalized, which is what a single-output lock-in
+  reports. `phase_rad` is a parameter slot.
+- `Quadratures(harmonics)`: the raw `X_n` and `Y_n`, for diagnosis and tests.
+- `BackgroundSubtracted(observable)`: subtracts the same observable computed with
+  transmission 1, which removes the harmonic content caused by intensity modulation alone.
+  The background is computed once in `prepare` unless it depends on retrieved laser
+  parameters.
+
+Calibration of a particular lock-in or detector (output gain drift, offset) is not part of
+the instrument type. It is either known and applied when the measurement is built, or
+retrieved through the baseline: an additive or multiplicative `LegendreBaseline` in
+normalized scan position.
 
 What this changes elsewhere in the design:
 
 - Measurement space and baseline must allow "none": WMS uses `LinearSpace()` (identity) and
-  either `NoBaseline()` or an additive polynomial offset in normalized branch position, the
-  analogue output drift that `calibrate_hardware_lockin` fits.
-- `Measurement` has a generic coordinate axis (section 3.9): sample time in seconds for WMS,
-  wavenumber for spectrometers.
-- Filtered time series have strongly correlated noise. A diagonal observation covariance on
-  every raw sample would overstate the information content and make chi squared meaningless.
-  The plan supports decimating the observable to the low-pass bandwidth before the
-  retrieval and accepts a full or banded `obs_precision`; open question 9 covers which to use
-  by default.
-- DSP.jl becomes a dependency, loaded through a package extension so DCS-only users do not
-  load it (open question 10). The triangle wave is a two-line function, so Waveforms.jl is
-  not needed.
-- ForwardDiff through `DSP.filt` with dual-number signals must be checked early (phase 7).
+  `NoBaseline()` or a polynomial baseline in scan position.
+- `Measurement` has a generic coordinate axis (section 3.9): slow-scan time in seconds for
+  WMS, wavenumber for spectrometers.
+- The observable from `DigitalLockIn` is low-pass filtered, so neighbouring samples have
+  strongly correlated noise. A diagonal observation covariance on every raw sample would
+  overstate the information content and make chi squared meaningless. The plan supports
+  decimating the observable to the low-pass bandwidth and accepts a full or banded
+  `obs_precision`; open question 9 covers the default.
+- The Butterworth filter design is a few dozen lines (bilinear transform of the analogue
+  prototype, second-order sections) and is implemented in core, generic in element type, so
+  ForwardDiff passes through it and DSP.jl is not needed (open question 10).
 
 ### 3.8 Measurement space and baselines
 
@@ -444,7 +474,8 @@ struct Measurement{FT<:Real, C<:AbstractVector{FT}, A}
 end
 ```
 
-`Measurement` is immutable and holds no physics settings. Core functions on measurements:
+`Measurement` is immutable and holds no physics settings. A keyword constructor fills
+`conditions` and `metadata` with empty named tuples when they are not given. Core functions on measurements:
 
 - `select_window(measurement, minimum_cm, maximum_cm)`: a new measurement restricted to an
   open interval, as `get_measurement` does now.
@@ -647,9 +678,10 @@ system.
     `optical_depth`.
   - `instruments/interpolation.jl`: shared interpolation operators.
   - `instruments/dcs.jl`, `instruments/fts.jl`, `instruments/grating.jl`.
-  - `instruments/wms_laser.jl`: sweep and intensity models.
-  - `instruments/wms_lockin.jl`: lock-in, observables, `demodulate`,
-    `calibrate_hardware_lockin`.
+  - `instruments/wms_laser.jl`: tuning and intensity models.
+  - `instruments/wms_demodulation.jl`: `HarmonicExpansion`, `DigitalLockIn`, `demodulate`.
+  - `instruments/wms_observables.jl`: harmonic observables and background subtraction.
+  - `instruments/digital_filters.jl`: Butterworth design and second-order-section filtering.
   - `baselines.jl`: Legendre matrices, baselines, measurement spaces, `obs_precision`, masks.
   - `measurements.jl`: `Measurement`, `select_window`, `time_average`.
   - `noise_estimation.jl`.
@@ -665,7 +697,9 @@ system.
   - `dcs_hdf5.jl`: `read_measurements(::Type{DCS}, path; reader_config)`, handling the three
     known field-name layouts, the pressure scale factor and the path length through a
     `DCSReaderConfig`, not constants.
-  - `wms_acquisition.jl`: reader for raw WMS detector and hardware lock-in traces.
+  - WMS has no reader yet: acquisition formats differ between instruments. A reader is added
+    to `io/` when a format is chosen; until then a `Measurement` is built from arrays, and
+    raw detector traces are demodulated with `demodulate`.
   - `line_lists.jl`: `load_cross_section_model(HitranVoigt, par_path; molecule, isotope,
     range_cm)` and `load_cross_section_model(LookupTable, jld2_path)`.
   - `absco_tables.jl`: OCO ABSCO HDF5 reader returning `ABSCOTable`.
@@ -772,7 +806,7 @@ top-level scripts `calc_noise.jl`, `example_run.jl`, `forward_model.jl`, `invers
 
 Dependencies:
 
-- Added: ComponentArrays, DSP (as a weak dependency with an extension).
+- Added: ComponentArrays.
 - Removed: Revise (a development tool, never a package dependency), Parameters, NCDatasets,
   DistributedArrays, RecursiveArrayTools, StatsBase, OrderedCollections and ProgressMeter
   (none are used, or only for progress output the apps do not need). Polynomials is removed
@@ -923,20 +957,32 @@ Tests:
   returns the line shape.
 - Grating: a tabulated Gaussian line shape reproduces the analytic Gaussian convolution of an
   analytic line (relative 1e-6).
-- WMS laser: the sweep's wavenumber trajectory matches the triangle-plus-sine formula; a
-  pinned comparison with `generate_spectral_grid` and `generate_intensity` from OpenPathGHG
-  on one configuration.
-- WMS lock-in: a synthetic signal with known 1f and 2f amplitudes and phases is recovered by
-  the lock-in within the filter's settling tolerance after the transient; the demodulation of
-  measured and simulated traces uses identical filter objects.
-- WMS observables: with zero absorption the background-subtracted 2f/1f observable is zero; a
-  pinned regression of `TwoFOverDC` against the OpenPathGHG implementation on the HITRAN
-  subset.
-- ForwardDiff through the WMS chain (including `DSP.filt` with dual numbers) agrees with
-  finite differences for CH4 column and the intensity-modulation parameters. If `DSP.filt`
-  does not accept dual numbers, the phase implements the filter as a direct-form difference
-  equation in core.
-- `calibrate_hardware_lockin` recovers a known gain, phase and offset from a synthetic trace.
+- WMS tuning and intensity: the wavenumber and intensity at each sample equal the closed-form
+  expressions for each scan and modulation type (relative 1e-14).
+- WMS small-modulation limit: with no intensity modulation and an optically thin line, the
+  second-harmonic in-phase component from `HarmonicExpansion` equals
+  `(a^2 / 4)` times the second derivative of the transmission (a is the modulation amplitude),
+  to relative 1e-3 at a modulation index of 0.01.
+- WMS Lorentzian harmonics: for an optically thin Lorentzian line with no intensity
+  modulation, the first and second harmonics from `HarmonicExpansion` match the closed-form
+  Lorentzian harmonic expressions (Arndt 1965) to relative 1e-8 at modulation indices from
+  0.1 to 3.
+- WMS normalization: `HarmonicRatio(2, 1)` and `HarmonicOverDC(2)` are unchanged (relative
+  1e-12) when detector gain or mean laser power is scaled.
+- WMS background: with transmission 1 and purely linear intensity modulation the second
+  harmonic is zero; with quadratic intensity modulation, `BackgroundSubtracted` removes it.
+- Digital filters: the Butterworth design matches the analogue prototype's magnitude response
+  at the cutoff (minus 3 dB) and its pinned coefficients for one order and cutoff; filtering
+  accepts dual numbers.
+- `DigitalLockIn`: a synthetic signal with known harmonic amplitudes and phases is recovered
+  within the filter's settling tolerance after the transient; with a scan slow compared with
+  the low-pass bandwidth, it agrees with `HarmonicExpansion` to a tolerance set by the filter
+  lag.
+- ForwardDiff through both demodulators agrees with central finite differences for the gas
+  column, the modulation amplitude, the intensity-modulation coefficients and a projection
+  phase (relative 1e-4).
+- Inverse-crime guard: the WMS retrieval test simulates truth with `DigitalLockIn` at a higher
+  sampling rate and retrieves with `HarmonicExpansion`.
 
 ### Phase 8: input and output
 
@@ -1045,8 +1091,10 @@ Other notes:
   `adaptive_inversion` allocates them every iteration.
 - Forward-model work buffers for Float64 calls can be preallocated; for dual calls, use
   PreallocationTools.jl's `DiffCache` if allocation shows up in profiles.
-- WMS: references and filters are built in `prepare`. Traces are about 10^5 samples, so the
-  Jacobian is best taken after decimation to the low-pass bandwidth.
+- WMS: references and filter coefficients are built in `prepare`. `HarmonicExpansion` costs
+  a few dozen transmission evaluations per scan point; `DigitalLockIn` works on traces of
+  about 10^5 samples, so its Jacobian is best taken after decimation to the low-pass
+  bandwidth.
 - Batch: line lists and models are loaded once per worker, not shipped in closures with every
   task; use `CachingPool` with `pmap`.
 - Keep `Float64` throughout; the struct type parameters allow other float types but the tests
@@ -1075,8 +1123,9 @@ Other notes:
    masked observations, which makes the degrees of freedom in chi squared correct?
 9. WMS noise: decimate the observable to the low-pass bandwidth and use a diagonal
    covariance, or keep every sample with a banded covariance from the filter response?
-10. Should the WMS code (and DSP.jl) live in SpectralFits as a package extension, as planned,
-    or in OpenPathGHG on top of the SpectralFits interface?
+10. WMS: should `HarmonicExpansion` (fast, no filter lag) or `DigitalLockIn` (time domain,
+    matches lock-in hardware) be the default demodulator, and is a core Butterworth
+    implementation preferred over depending on DSP.jl?
 11. Parallelism in the batch app: `pmap` over processes as now, threads, or both selectable in
     the configuration?
 12. Is the OCO ABSCO path still wanted? If not, `ABSCOTable` and its reader are dropped from
@@ -1148,30 +1197,36 @@ result.x.CH4 / n_air, sqrt(result.posterior_covariance[2, 2]) / n_air, result.df
 
 ## 10. Example: an open-path WMS forward model under the new API
 
-The OpenPathGHG simulation in `retrieval/instrument.jl` becomes a configuration of core types:
+A line-locked CH4 measurement with 2f/1f detection, retrieving the CH4 column and the linear
+intensity-modulation amplitude:
 
 ```julia
-wms_measurement = read_measurements(WavelengthModulation, "branch_0001.csv")[1]  # io/wms_acquisition.jl
+ch4 = load_cross_section_model(HitranVoigt, "hit20_CH4.par"; molecule = 6, isotope = 1,
+                               range_cm = (6045.0, 6048.0))
 
-sweep = LaserSweep(start_cm = 6046.6, span_cm = 0.6, slow_period_s = 0.1,
-                   modulation_amplitude_cm = 0.05, modulation_frequency_Hz = 10e3,
-                   sampling_rate_Hz = 2.4e6)
-laser = LaserIntensity(mean_intensity = 1.0, linear_im = 0.1, nonlinear_im = 0.005,
-                       linear_phase_rad = 0.0, nonlinear_phase_rad = 0.0)
-instrument = WavelengthModulation(sweep, laser, LockIn(lowpass_cutoff_Hz = 100.0),
-                                  TwoFOverDC())
+instrument = WavelengthModulation(
+    LaserTuning(TriangleScan(start_cm = 6046.3, span_cm = 0.8, period_s = 0.1),
+                SinusoidalModulation(amplitude_cm = 0.05, frequency_Hz = 10e3)),
+    IntensityModulation(mean = 1.0, linear_amplitude = 0.1, linear_phase_rad = 0.0),
+    HarmonicExpansion(harmonics = (1, 2)),
+    BackgroundSubtracted(HarmonicRatio(2, 1)),
+)
 
 atmosphere = HomogeneousPath(pressure_hPa = 1000.0, temperature_K = 295.0,
                              path_length_cm = 1.0e4)
 x_prior = ComponentVector(CH4 = 2.0e-6 * dry_air_column(atmosphere),
-                          instrument = (linear_im = 0.1,))   # retrieve one laser parameter
+                          instrument = (linear_amplitude = 0.1,))
+
+# the observed 2f/1f against slow-scan time, already demodulated
+measurement = Measurement(y = observed_2f_over_1f, coordinate = scan_time_s,
+                          noise_variance = noise_variance, time = DateTime(2026, 6, 1))
 
 model = build_forward_model(atmosphere, (CH4 = Absorber(:CH4, ch4),), instrument,
-                            NoBaseline(), LinearSpace(), ColumnDensity(),
-                            wms_measurement, x_prior)
-y_model = model(x_prior)
-y_observed = demodulate(model.instrument, wms_measurement.y)   # same lock-in as the model
+                            NoBaseline(), LinearSpace(), ColumnDensity(), measurement, x_prior)
+problem = RetrievalProblem(model, measurement.y, obs_precision(LinearSpace(), measurement),
+                           x_prior, prior_precision_from_sigma(prior_sigma))
+result = solve(problem, LevenbergMarquardt())
 ```
 
-The numbers above are placeholders; the OpenPathGHG configuration supplies the real values.
-The retrieval then uses the same `RetrievalProblem`, `solve` and diagnostics as DCS.
+The numbers are placeholders. The retrieval uses the same `RetrievalProblem`, `solve` and
+diagnostics as DCS.
