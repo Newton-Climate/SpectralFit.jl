@@ -63,8 +63,7 @@ function build_forward_model(atmosphere::AbstractAtmosphere, absorbers::NamedTup
     prepared = bind_parameters(prepare(bind_parameters(instrument, x_prior), measurement), x_prior)
 
     grid = wavenumber_fine_cm === nothing ?
-        default_fine_grid(prepared; spacing_cm = fine_grid_spacing_cm, x_prior = x_prior) :
-        wavenumber_fine_cm
+        choose_fine_grid(prepared, fine_grid_spacing_cm, x_prior) : wavenumber_fine_cm
     check_fine_grid(grid, prepared, absorbers, x_prior)
     prepared = bind_fine_grid(prepared, grid)
 
@@ -76,6 +75,28 @@ function build_forward_model(atmosphere::AbstractAtmosphere, absorbers::NamedTup
     built = map(a -> maybe_precompute(a, grid, conditions, x_prior), absorbers)
     return ForwardModel(atm, built, prepared, prepared_baseline, space, units, grid)
 end
+
+"""
+    choose_fine_grid(prepared, spacing_cm, x_prior) -> AbstractRange
+
+Fine grid when none is given. Without a spacing, the instrument's `default_fine_grid`. With a
+spacing (cm-1), the instrument coverage at `x_prior` padded by two spacings on each side.
+DCS keeps its v0.1 default (1 cm margin) at the requested spacing.
+"""
+function choose_fine_grid(prepared, spacing_cm, x_prior)
+    if spacing_cm === nothing
+        hasmethod(default_fine_grid, Tuple{typeof(prepared)}) || throw(ArgumentError(
+            "$(nameof(typeof(prepared))) has no default fine grid; pass wavenumber_fine_cm " *
+            "or fine_grid_spacing_cm"))
+        return default_fine_grid(prepared)
+    end
+    lo, hi = wavenumber_coverage_cm(prepared, x_prior)
+    n = ceil(Int, (hi - lo) / spacing_cm) + 5
+    start = lo - 2 * spacing_cm
+    return range(start; step = Float64(spacing_cm), length = n)
+end
+choose_fine_grid(prepared::PreparedDCS, spacing_cm, x_prior) =
+    default_fine_grid(prepared; spacing_cm = spacing_cm, x_prior = x_prior)
 
 function maybe_precompute(absorber::Absorber, grid, conditions, x_prior)
     model = absorber.model
