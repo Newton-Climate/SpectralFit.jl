@@ -3,7 +3,7 @@
 #
 # Layout as HDF5.jl reads it (Julia order, the reverse of the C order in the file):
 #   Wavenumber           (n_nu,)                  cm-1
-#   Broadener_01_VMR     (n_h2o,)                 H2O mole fraction of wet air, mol/mol
+#   Broadener_01_VMR     (n_h2o,)                 H2O mole fraction, mol/mol (used as dry air)
 #   Temperature          (n_T, n_p)               K, one temperature grid per pressure level
 #   Pressure             (n_p,)                   Pa
 #   Gas_XX_Absorption    (n_nu, n_h2o, n_T, n_p)  cm2/molecule

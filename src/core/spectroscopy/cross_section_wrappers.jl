@@ -54,8 +54,8 @@ union_conditions(a::Tuple, b::Tuple) =
 OCO-style absorption coefficient table: `sigma[i_nu, i_h2o, i_T, i_p]` in cm2/molecule on
 
 - `axes.wavenumber_cm`: increasing wavenumbers, cm-1;
-- `axes.h2o_mole_fraction`: increasing H2O broadener mole fractions, mol/mol of wet air (the
-  ABSCO `Broadener_01_VMR` convention);
+- `axes.h2o_mole_fraction`: increasing H2O broadener mole fractions, mol/mol of dry air (the
+  ABSCO `Broadener_01_VMR` axis, read as the OCO L2 code reads it);
 - `axes.temperature_K`: temperatures, K, either a vector shared by all pressure levels or a
   matrix `temperature_K[i_T, i_p]` with one increasing column per pressure level, as in the
   ABSCO files;
@@ -64,8 +64,8 @@ OCO-style absorption coefficient table: `sigma[i_nu, i_h2o, i_T, i_p]` in cm2/mo
 `cross_section` interpolates linearly in each axis: in H2O, then in temperature on the grids
 of the two pressure levels that bracket the pressure, then in pressure, then in wavenumber.
 The table is therefore exact for any function that is linear in each axis. The H2O dry mole
-fraction `q` of the conditions is converted to the wet mole fraction `q / (1 + q)` of the
-table axis. Pressure, temperature and H2O outside the table are an error (no extrapolation);
+fraction of the conditions is looked up directly, without a wet-air conversion, as the OCO L2
+code (RtRetrievalFramework `absorber_absco.cc`) passes its dry-air H2O VMR to the table. Pressure, temperature and H2O outside the table are an error (no extrapolation);
 an axis of length one is held constant. Depends on pressure, temperature and H2O.
 
 ```julia
@@ -143,11 +143,10 @@ function cross_section(m::ABSCOTable, wavenumber_cm::AbstractVector, c::GasCondi
     R = condition_eltype(c)
     p = R(c.pressure_hPa)
     T = R(c.temperature_K)
-    q_dry = R(c.h2o_dry_mole_fraction)
-    q_wet = q_dry / (1 + q_dry)
+    q = R(c.h2o_dry_mole_fraction)
     check_grid_in_range(wavenumber_cm, spectral_range_cm(m))
 
-    iq, wq = bracket(m.h2o_mole_fraction, q_wet, "h2o wet mole fraction")
+    iq, wq = bracket(m.h2o_mole_fraction, q, "h2o dry mole fraction")
     ip, wp = bracket(m.pressure_hPa, p, "pressure_hPa")
     # corners: (h2o index, temperature index, pressure index, weight)
     corners = absco_corners(m, iq, wq, ip, wp, T)

@@ -1106,7 +1106,7 @@ Other notes:
 
 ## 8. Decisions on the open questions
 
-Decided 2026-10-20. Question 12 is still open.
+Decided 2026-10-20.
 
 1. The `v0.1-legacy` tag is pushed to origin (b47a99d).
 2. Physical constants are CODATA 2018 (Avogadro 6.02214076e23, gas constant N_A k_B) with
@@ -1137,11 +1137,10 @@ Decided 2026-10-20. Question 12 is still open.
 11. The batch app runs on 2 worker processes by default (`parallel = :processes`,
     `n_workers = 2`); `run` starts the missing workers and removes them afterwards.
     `parallel = :serial` is available.
-12. Open: the H2O axis of the OCO ABSCO tables. The code converts the dry mole fraction q to a
-    wet one, q / (1 + q), before the lookup. The ABSCO user guide does not define the basis,
-    and the OCO L2 code (RtRetrievalFramework `absorber_absco.cc`) passes its H2O VMR, which
-    is per dry air, to the table without conversion. The two differ by about 2% in the H2O
-    coordinate at q = 0.02, a small change in the cross section.
+12. The OCO ABSCO path is kept (`ABSCOTable`, `read_absco_table`). The H2O dry mole fraction
+    is looked up on the `Broadener_01_VMR` axis directly, without a wet-air conversion. The
+    ABSCO user guide does not define the basis; this matches the OCO L2 code
+    (RtRetrievalFramework `absorber_absco.cc`), which passes its dry-air H2O VMR to the table.
 13. Window edges are closed intervals: a point on an edge is included. This applies to
     retrieval windows, masked windows and the flat windows of the noise estimators.
 

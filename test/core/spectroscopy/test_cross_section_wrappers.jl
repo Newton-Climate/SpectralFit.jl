@@ -64,7 +64,8 @@ end
 end
 
 @testset "ABSCOTable" begin
-    # synthetic table: sigma = f(nu, q_wet, T, p), linear in each axis, with cross terms
+    # synthetic table: sigma = f(nu, q, T, p), linear in each axis, with cross terms; q is the
+    # H2O dry mole fraction, looked up without a wet-air conversion (OCO L2 convention)
     f(nu, q, T, p) = 1e-22 * (1 + 0.5 * (nu - 6200) + 3q + 0.01 * (T - 250) +
                               2e-3 * p + 1e-5 * (T - 250) * p + 0.2 * q * (nu - 6200))
     nu = collect(6200.0:0.5:6205.0)
@@ -87,14 +88,16 @@ end
     @testset "reproduces a function linear in each axis" begin
         for (p, T, q_dry) in ((850.0, 290.0, 0.01), (100.0, 190.0, 0.0), (433.3, 251.7, 0.04),
                               (1000.0, 312.0, 0.04 / 0.96))
-            q_wet = q_dry / (1 + q_dry)
-            expected = f.(grid, q_wet, T, p)
+            expected = f.(grid, q_dry, T, p)
             got = cross_section(table, grid, GasConditions(p, T, q_dry))
             @test maximum(abs.(got .- expected)) <= 1e-12 * maximum(abs.(expected))
         end
         # exactly on the wavenumber nodes
         c = GasConditions(550.0, 260.0, 0.03)
-        @test isapprox(cross_section(table, nu, c), f.(nu, 0.03 / 1.03, 260.0, 550.0); rtol = 1e-12)
+        @test isapprox(cross_section(table, nu, c), f.(nu, 0.03, 260.0, 550.0); rtol = 1e-12)
+        # on an H2O node the dry mole fraction selects that slice of the table
+        c = GasConditions(p_axis[2], T_axis[3, 2], q_axis[2])
+        @test isapprox(cross_section(table, nu, c), sigma[:, 2, 3, 2]; rtol = 1e-12)
     end
 
     @testset "derivatives are exact for the linear table" begin
@@ -105,7 +108,7 @@ end
         for j in 1:3
             @test norm(J_ad[:, j] - J_fd[:, j]) / norm(J_fd[:, j]) < 1e-6
         end
-        # analytic d sigma / d p at fixed q_wet and T
+        # analytic d sigma / d p at fixed q and T
         @test isapprox(J_ad[:, 1], fill(1e-22 * (2e-3 + 1e-5 * (270.0 - 250)), length(grid));
                        rtol = 1e-9)
     end

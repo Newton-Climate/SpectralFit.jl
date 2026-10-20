@@ -37,7 +37,7 @@ end
             @test table.sigma == sigma
             @test spectral_range_cm(table) == (6200.0, 6210.0)
             c = GasConditions(700.0, 260.0, 0.01)
-            expected = f.(6201.0:0.1:6209.0, 0.01 / 1.01, 260.0, 700.0)
+            expected = f.(6201.0:0.1:6209.0, 0.01, 260.0, 700.0)        # dry q, no conversion
             @test isapprox(cross_section(table, 6201.0:0.1:6209.0, c), expected; rtol = 1e-12)
             @test read_absco(path; gas = 2).sigma == sigma
         end
