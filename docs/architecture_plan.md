@@ -331,8 +331,9 @@ Provided instruments:
 - `WavelengthModulation(...)`: see section 3.7.
 
 For FTS and grating instruments `apply_instrument` is a fixed linear map, a stored sparse
-matrix times the transmission. DCS can use the same matrix form when there is no stretch
-(open question 4).
+matrix times the transmission. DCS uses the same matrix form when there is no stretch or a
+fixed one: `bind_fine_grid` stores the cubic B-spline as a banded sparse matrix, equal to the
+spline to ~1e-15 (open question 4); a stretch read from the state keeps the per-call spline.
 
 ### 3.7 Open-path wavelength-modulation spectroscopy
 

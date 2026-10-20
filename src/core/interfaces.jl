@@ -131,9 +131,9 @@ function default_fine_grid end
     bind_fine_grid(prepared, wavenumber_fine_cm::AbstractRange)
 
 Second build-time step for instruments whose operator depends on the fine grid (FTS and
-grating line-shape matrices). The builder calls `prepare(instrument, measurement)`, chooses
-the fine grid from `wavenumber_coverage_cm` or `default_fine_grid`, then calls this. The
-fallback returns `prepared` unchanged.
+grating line-shape matrices, the DCS interpolation matrix). The builder calls
+`prepare(instrument, measurement)`, chooses the fine grid from `wavenumber_coverage_cm` or
+`default_fine_grid`, then calls this. The fallback returns `prepared` unchanged.
 """
 bind_fine_grid(prepared, wavenumber_fine_cm) = prepared
 
