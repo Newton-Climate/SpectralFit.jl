@@ -1,7 +1,8 @@
-CrossSections_data/OCO_spectra.hdf
 # editor backups
 *~
 \#*\#
 .\#*
 *.swp
 *.bak
+.DS_Store
+CrossSections_data/OCO_spectra.hdf

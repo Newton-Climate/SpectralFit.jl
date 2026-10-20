@@ -1,18 +1,20 @@
-using Test
+# Runs every test/**/test_*.jl file, each in its own testset, in sorted path order.
+# Run one file with: julia --project=test test/run_one.jl test/core/test_air_columns.jl
 
 include("helpers.jl")
 
+function find_test_files(root)
+    files = String[]
+    for (dir, _, names) in walkdir(root), name in names
+        startswith(name, "test_") && endswith(name, ".jl") && push!(files, joinpath(dir, name))
+    end
+    return sort(files)
+end
+
 @testset "SpectralFits" begin
-    @testset "unit: utils" begin
-        include("test_utils.jl")
-    end
-    @testset "unit: read_data" begin
-        include("test_read_data.jl")
-    end
-    @testset "unit: spectroscopy" begin
-        include("test_spectroscopy.jl")
-    end
-    @testset "integration: retrievals" begin
-        include("test_integration.jl")
+    for file in find_test_files(@__DIR__)
+        @testset "$(relpath(file, @__DIR__))" begin
+            include(file)
+        end
     end
 end
