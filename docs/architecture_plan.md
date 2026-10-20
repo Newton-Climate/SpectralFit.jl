@@ -418,9 +418,9 @@ What this changes elsewhere in the design:
   WMS, wavenumber for spectrometers.
 - The observable from `DigitalLockIn` is low-pass filtered, so neighbouring samples have
   strongly correlated noise. A diagonal observation covariance on every raw sample would
-  overstate the information content and make chi squared meaningless. The plan supports
-  decimating the observable to the low-pass bandwidth and accepts a full or banded
-  `obs_precision`; open question 9 covers the default.
+  overstate the information content and make chi squared meaningless. The default is a
+  banded covariance from the filter autocorrelation (`wms_noise_covariance`) applied as a
+  `CovariancePrecision`; see open question 9.
 - The Butterworth filter design is a few dozen lines (bilinear transform of the analogue
   prototype, second-order sections) and is implemented in core, generic in element type, so
   ForwardDiff passes through it and DSP.jl is not needed (open question 10).
@@ -1123,8 +1123,14 @@ or as the plan proposed. They still need confirmation; when one is confirmed, de
    (positive semi-definite check), and LM damps those elements with Marquardt scaling.
 8. Masked windows. Provisional: de-weighting by 1e-5 (`mask_mode = :deweight`);
    `mask_mode = :drop` is also implemented.
-9. WMS noise. Provisional: no decimation is applied automatically; `RetrievalProblem` accepts
-   any symmetric positive definite `obs_precision`, so a banded one can be passed.
+9. WMS noise. Decided: no decimation; a banded observation covariance instead.
+   `wms_noise_covariance(prepared[, lockin], detector_variance; signals, band_tolerance)`
+   (`core/instruments/wms_noise.jl`) builds the sparse covariance from the lock-in low-pass
+   autocorrelation at the lags between observation times (mixing gain 2 for `X_n`, `Y_n`, 1
+   for DC; components uncorrelated; ratio observables linearised to first order about
+   `signals`). `CovariancePrecision(Se)` (`core/covariance_precision.jl`) holds it by its
+   sparse Cholesky factor and is accepted as `obs_precision` everywhere, so the dense inverse
+   is never formed.
 10. WMS demodulator. Provisional: `HarmonicExpansion` is the default for retrievals; the
     Butterworth filter is implemented in core, without DSP.jl.
 11. Parallelism in the batch app. Provisional: `:serial` (default) or `:processes` with

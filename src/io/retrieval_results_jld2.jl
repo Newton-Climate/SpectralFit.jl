@@ -19,6 +19,11 @@
 #       "K", "posterior_covariance", "averaging_kernel"   Matrix{Float64}
 #       "obs_precision", "prior_precision"       Matrix{Float64}, or Vector{Float64} of the
 #                                                diagonal when "<name>_is_diagonal" is true
+#       "obs_precision_covariance_rows", "..._cols", "..._values", "..._size"
+#                                     sparse triplets (Int, Int, Float64) and (n, n) of the
+#                                     covariance, present only when "obs_precision_is_covariance"
+#                                     is true (a `CovariancePrecision`; "obs_precision" is then
+#                                     an empty matrix)
 #       "time"                        ISO 8601 string ("" when not given)
 #       "metadata"                    Dict{String,Any}: the measurement's metadata
 
@@ -52,8 +57,27 @@ function _store_precision!(d::Dict{String,Any}, name::String, P::AbstractMatrix)
     return d
 end
 
-_load_precision(d, name) = d[name * "_is_diagonal"] ? Diagonal(Vector{Float64}(d[name])) :
-                                                      Matrix{Float64}(d[name])
+function _store_precision!(d::Dict{String,Any}, name::String, P::CovariancePrecision)
+    rows, cols, values = findnz(observation_covariance(P))
+    d[name * "_is_diagonal"] = false
+    d[name * "_is_covariance"] = true
+    d[name] = zeros(0, 0)
+    d[name * "_covariance_rows"] = rows
+    d[name * "_covariance_cols"] = cols
+    d[name * "_covariance_values"] = values
+    d[name * "_covariance_size"] = collect(size(P))
+    return d
+end
+
+function _load_precision(d, name)
+    if get(d, name * "_is_covariance", false)
+        n, m = d[name * "_covariance_size"]
+        return CovariancePrecision(sparse(Vector{Int}(d[name * "_covariance_rows"]),
+                                          Vector{Int}(d[name * "_covariance_cols"]),
+                                          Vector{Float64}(d[name * "_covariance_values"]), n, m))
+    end
+    return d[name * "_is_diagonal"] ? Diagonal(Vector{Float64}(d[name])) : Matrix{Float64}(d[name])
+end
 
 function _result_dict(r::RetrievalResult, time, metadata)
     d = Dict{String,Any}(
@@ -194,7 +218,8 @@ Read a file written by `save_results`. Each result is a `NamedTuple` with the fi
 - `x`, `x_prior`, `dfs_per_element`: `ComponentVector`s rebuilt from the stored flat vectors
   and labels with `state_from_labels`, so `r.x.CH4` works as on the original result.
 - `status`: a `RetrievalStatus` (`Converged`, `MaxIterations`, `Failed`).
-- `obs_precision`, `prior_precision`: `Diagonal` when saved from a `Diagonal`, else `Matrix`.
+- `obs_precision`, `prior_precision`: `Diagonal` when saved from a `Diagonal`, a
+  `CovariancePrecision` when saved from one, else `Matrix`.
 - every other field: the stored number, string, vector or matrix.
 
 # Example

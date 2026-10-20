@@ -8,6 +8,7 @@ module IOLayer
 
 using Dates
 using LinearAlgebra
+using SparseArrays
 using HDF5
 using JLD2
 using ComponentArrays

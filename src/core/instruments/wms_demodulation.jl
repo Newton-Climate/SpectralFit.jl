@@ -208,12 +208,13 @@ prepare_demodulator(d::HarmonicExpansion, tuning, times) =
                           [2 / M * sin(n * th) for th in theta, n in d.harmonics])
     end
 
-function prepare_demodulator(d::DigitalLockIn, tuning, times)
+# Lock-in sample grid (s) for the measurement times, and for each time the sample index i and
+# linear weight w of sample i + 1 (the time lies between samples i and i + 1).
+function lockin_sampling(d::DigitalLockIn, times)
     fs = d.sampling_rate_Hz
     t0 = first(times) - d.pre_roll_s
     n = floor(Int, (maximum(times) - t0) * fs + 1e-9) + 2
     t = range(t0; step = 1 / fs, length = n)
-    w = 2pi * tuning.modulation.frequency_Hz
     index = Vector{Int}(undef, length(times))
     weight = Vector{Float64}(undef, length(times))
     for (k, tk) in enumerate(times)
@@ -223,9 +224,15 @@ function prepare_demodulator(d::DigitalLockIn, tuning, times)
         index[k] = i + 1
         weight[k] = u - i
     end
+    return t, index, weight
+end
+
+function prepare_demodulator(d::DigitalLockIn, tuning, times)
+    t, index, weight = lockin_sampling(d, times)
+    w = 2pi * tuning.modulation.frequency_Hz
     return PreparedLockIn(t, [2cos(n_h * w * ti) for ti in t, n_h in d.harmonics],
                           [2sin(n_h * w * ti) for ti in t, n_h in d.harmonics],
-                          design_filter(d.lowpass, fs), index, weight)
+                          design_filter(d.lowpass, d.sampling_rate_Hz), index, weight)
 end
 
 """

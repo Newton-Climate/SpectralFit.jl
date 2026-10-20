@@ -8,6 +8,12 @@
 #
 # The one place that turns these into a result is `retrieval_result` in retrieval_result.jl;
 # no solver computes a posterior itself (issue 1).
+#
+# `obs_precision` may be any symmetric positive definite matrix (dense, `Diagonal`, sparse) or
+# a `CovariancePrecision`, which holds the factorized covariance and is applied by solves.
+
+"""Accepted observation precisions: an `AbstractMatrix` or a `CovariancePrecision`."""
+const ObservationPrecision = Union{AbstractMatrix, CovariancePrecision}
 
 """
     normal_matrix(K, obs_precision, prior_precision) -> Symmetric{Float64, Matrix{Float64}}
@@ -19,7 +25,7 @@ posterior covariance, as a dense symmetric matrix (state units to the power -2).
 N = normal_matrix(K, Diagonal(fill(1e4, size(K, 1))), Diagonal([1.0, 1.0]))
 ```
 """
-function normal_matrix(K::AbstractMatrix, obs_precision::AbstractMatrix,
+function normal_matrix(K::AbstractMatrix, obs_precision::ObservationPrecision,
                        prior_precision::AbstractMatrix)
     information = Matrix{Float64}(K' * (obs_precision * K))
     N = information + prior_precision
@@ -38,7 +44,7 @@ K = [1.0 0.0; 0.0 2.0; 1.0 1.0]
 S = posterior_covariance(K, Diagonal(fill(100.0, 3)), Diagonal([1.0, 1.0]))
 ```
 """
-posterior_covariance(K::AbstractMatrix, obs_precision::AbstractMatrix,
+posterior_covariance(K::AbstractMatrix, obs_precision::ObservationPrecision,
                      prior_precision::AbstractMatrix) =
     Matrix{Float64}(inv(normal_matrix(K, obs_precision, prior_precision)))
 
@@ -53,8 +59,9 @@ G = gain_matrix(K, Se_inv, Sa_inv)
 dx = G * (y - y_model)
 ```
 """
-gain_matrix(K::AbstractMatrix, obs_precision::AbstractMatrix, prior_precision::AbstractMatrix) =
-    posterior_covariance(K, obs_precision, prior_precision) * Matrix{Float64}(K' * obs_precision)
+gain_matrix(K::AbstractMatrix, obs_precision::ObservationPrecision, prior_precision::AbstractMatrix) =
+    posterior_covariance(K, obs_precision, prior_precision) *
+    Matrix{Float64}(_adjoint_times_precision(K, obs_precision))
 
 """
     averaging_kernel(K, obs_precision, prior_precision) -> Matrix{Float64}
@@ -68,7 +75,7 @@ A = averaging_kernel(K, Se_inv, Sa_inv)
 dfs_total = tr(A)
 ```
 """
-function averaging_kernel(K::AbstractMatrix, obs_precision::AbstractMatrix,
+function averaging_kernel(K::AbstractMatrix, obs_precision::ObservationPrecision,
                           prior_precision::AbstractMatrix)
     S = posterior_covariance(K, obs_precision, prior_precision)
     return S * Matrix{Float64}(K' * (obs_precision * K))
@@ -103,7 +110,7 @@ compare with `rodgers_tolerance`.
 rodgers_d2([0.1, 0.0], K, Se_inv, Sa_inv)
 ```
 """
-rodgers_d2(dx::AbstractVector, K::AbstractMatrix, obs_precision::AbstractMatrix,
+rodgers_d2(dx::AbstractVector, K::AbstractMatrix, obs_precision::ObservationPrecision,
            prior_precision::AbstractMatrix) =
     rodgers_d2(dx, normal_matrix(K, obs_precision, prior_precision))
 
@@ -123,7 +130,7 @@ Observation term of the cost, `(y - y_model)' * obs_precision * (y - y_model)`, 
 observation_cost([1.0, 2.0], [1.1, 1.9], Diagonal([100.0, 100.0]))   # 2.0
 ```
 """
-function observation_cost(y::AbstractVector, y_model::AbstractVector, obs_precision::AbstractMatrix)
+function observation_cost(y::AbstractVector, y_model::AbstractVector, obs_precision::ObservationPrecision)
     r = y - y_model
     return Float64(dot(r, obs_precision * r))
 end
@@ -192,7 +199,7 @@ function normal_matrix_condition(N::AbstractMatrix)
     lambda_min = minimum(lambda)
     return lambda_min > 0 ? maximum(lambda) / lambda_min : Inf
 end
-normal_matrix_condition(K::AbstractMatrix, obs_precision::AbstractMatrix,
+normal_matrix_condition(K::AbstractMatrix, obs_precision::ObservationPrecision,
                         prior_precision::AbstractMatrix) =
     normal_matrix_condition(normal_matrix(K, obs_precision, prior_precision))
 
@@ -207,7 +214,7 @@ after the step.
 """
 function predicted_cost(y::AbstractVector, y_model::AbstractVector, K::AbstractMatrix,
                         x::AbstractVector, x_prior::AbstractVector,
-                        obs_precision::AbstractMatrix, prior_precision::AbstractMatrix,
+                        obs_precision::ObservationPrecision, prior_precision::AbstractMatrix,
                         dx::AbstractVector)
     r = y - y_model - K * dx
     p = collect(x) + dx - collect(x_prior)
