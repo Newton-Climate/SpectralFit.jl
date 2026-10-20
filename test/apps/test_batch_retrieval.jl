@@ -79,7 +79,7 @@ end
         # configuration checks again for configurations built positionally
         empty_windows = RetrievalConfig(Tuple{Float64,Float64}[], Int[], :multiplicative,
                                         LinearSpace(), ColumnDensity(), DCS(), false, false,
-                                        Dict{Symbol,Float64}(), nothing,
+                                        Dict{Symbol,Float64}(), nothing, nothing,
                                         Tuple{Float64,Float64}[], :deweight, 1e-5,
                                         :from_measurement, GaussNewton())
         @test_throws r"windows_cm" batch_test_config(data_directory = dir, retrieval = empty_windows)

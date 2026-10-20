@@ -38,6 +38,8 @@ Outcome of a retrieval with all optimal-estimation diagnostics. Fields:
 - `prior_influence`: `1 - dfs_total / n_state`.
 - `condition_number`: condition number of the Jacobi-scaled normal matrix at `x`
   (see `normal_matrix_condition`).
+- `rmse`: root-mean-square residual `y - y_model` in measurement-space units (`residual_rmse`),
+  over the observations at full weight (de-weighted, masked observations are left out).
 
 For a `Failed` result the matrix diagnostics that could not be computed are `NaN`.
 Built only by `retrieval_result`.
@@ -63,6 +65,7 @@ struct RetrievalResult{X<:ComponentVector, PO<:ObservationPrecision, PA<:Abstrac
     chi2_total_per_dof::Float64
     prior_influence::Float64
     condition_number::Float64
+    rmse::Float64
 end
 
 """
@@ -107,7 +110,7 @@ function retrieval_result(problem, x::AbstractVector, K::AbstractMatrix, y_model
     else
         N = normal_matrix(K_dense, Se_inv, Sa_inv)
         if issuccess(cholesky(N; check = false))
-            S = Matrix{Float64}(inv(N))
+            S = scaled_inverse(N)
             A = S * Matrix{Float64}(K_dense' * (Se_inv * K_dense))
             condition = normal_matrix_condition(N)
         else
@@ -127,7 +130,8 @@ function retrieval_result(problem, x::AbstractVector, K::AbstractMatrix, y_model
                            ComponentVector(dfs, axes_x), dfs_sum,
                            chi2_per_dof(cost_obs, n_obs, n_state),
                            chi2_per_dof(cost_obs + cost_prior, n_obs, n_state),
-                           prior_influence(dfs_sum, n_state), condition)
+                           prior_influence(dfs_sum, n_state), condition,
+                           residual_rmse(y, y_model_vec, Se_inv))
 end
 
 _append_message(msg::String, extra::String) = isempty(msg) ? extra : string(msg, "; ", extra)

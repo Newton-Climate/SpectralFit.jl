@@ -12,6 +12,7 @@ using SparseArrays
 using HDF5
 using JLD2
 using ComponentArrays
+import TOML
 import vSmartMOM
 import vSmartMOM.Absorption as Absorption
 import Interpolations
@@ -21,5 +22,8 @@ include("dcs_hdf5.jl")
 include("line_lists.jl")
 include("absco_tables.jl")
 include("retrieval_results_jld2.jl")
+include("run_folders.jl")
+include("config_files.jl")
+include("config_specs.jl")
 
 end # module IOLayer

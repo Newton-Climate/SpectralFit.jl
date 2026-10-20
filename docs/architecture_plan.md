@@ -1348,3 +1348,44 @@ Input, output and the batch app:
   degree of freedom 1.77. The `.jld2` lookup tables in `DCS_experiments/spectra` were written
   by an older JLD2 and do not load under Julia 1.12; they need regenerating.
 - `examples/dcs_merlin_batch.jl` is the section 9 script as a file.
+
+Configuration-driven apps and fixes found while porting DCS_experiments (2026-10-20):
+
+- The posterior covariance (`posterior_covariance`, and so `averaging_kernel`, DFS and
+  posterior sigmas in every `RetrievalResult`) is now inverted in Jacobi-scaled form
+  (`scaled_inverse`). The unscaled `inv` of the normal matrix lost the small entries for
+  profile states (layer columns near 1e22 next to baseline coefficients near 1, unscaled
+  condition number near 1e54): DFS were wrong by up to 1.5 and posterior sigmas by up to 1e-2
+  relative. The solvers were unaffected (their Cholesky solves do not depend on diagonal
+  scaling); the v0.1 regression tests still pass to their tolerances.
+- `correlated_prior_covariance` / `correlated_prior_precision` replace v0.1
+  `make_prior_error(sigma, nGas, coordinate, lengths)`. They add a nugget (default 1e-6):
+  the Gaussian kernel with 50 hPa correlation on 10 to 30 hPa layers has a condition number
+  near 1e16, so v0.1's inverse was dominated by round-off. Results are insensitive to the
+  nugget between 1e-8 and 1e-4.
+- `RetrievalConfig(fine_grid_margin_cm)`: lookup tables that end close to the window (the
+  MERLIN tables, 6076-6078 cm-1) cannot hold the 1 cm DCS margin.
+- `RetrievalResult.rmse`: residual RMS over full-weight observations (`residual_rmse`).
+- Results files store each result's observation coordinate (optional key `coordinate`;
+  older files load with an empty one).
+- `time_average` records `first_sample_time`; `ConditionsTable` / `apply_conditions` /
+  `read_conditions_csv` replace measurement conditions from a time series (fixed p and T from
+  a tower record), and `BatchRetrievalConfig(conditions)` applies them.
+- The batch app sends its configuration to each worker once, one worker at a time, then
+  distributes the measurements. Sending the configuration as a `CachingPool` closure
+  corrupted the stream (`TypeError` during deserialization on a worker) for configurations
+  holding about 500 MB of lookup tables, intermittently.
+- Configuration files (`io/config_files.jl`, `io/config_specs.jl`), run folders
+  (`io/run_folders.jl`, shared by the apps), `Apps.ProfileOSSE`, `Apps.run_config` and
+  `bin/run_config.jl` turn the DCS_experiments run scripts into TOML files.
+- Smoke test on real data with the new tables: HITRAN 2024 CH4 in the 6050-6115 cm-1 window
+  (TCCON 2020 H2O, HDO, HITRAN 2020 CO2 lookup tables; p and T retrieved; 100 baseline
+  coefficients; 4 workers) converges for all 94 15-minute averages of 20160921 in about
+  2 minutes per variant. Median residual RMSE 0.00104 (Voigt), 0.00091 (with line mixing).
+- Follow-ups from porting the scripts: variant markers `_replace` / `_remove` in
+  `merge_config`; `find_run(...; require_results = true)` passes over aborted runs; batch
+  configurations check that each absorber covers its windows plus the fine-grid margin;
+  ProfileOSSE results record the retrieval and truth cross-section specs; `Apps.LookupTables`
+  (`app = "lookup_table"`) builds tables, reproducing the coefficients of the
+  DCS_experiments make_hit24 script exactly (tccon_HDO_ch4win, compared coefficient by
+  coefficient) and reporting the interpolation error between nodes (0.12 % for that table).

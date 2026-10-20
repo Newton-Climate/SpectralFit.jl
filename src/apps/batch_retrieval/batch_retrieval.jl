@@ -5,8 +5,9 @@
 
 const FileFailure = NamedTuple{(:file, :message),Tuple{String,String}}
 const MeasurementOutcome = NamedTuple{(:source_file, :index, :time, :status, :exception, :message,
-                                       :chi2_obs_per_dof, :dfs_total),
-                                      Tuple{String,Int,DateTime,Symbol,Bool,String,Float64,Float64}}
+                                       :chi2_obs_per_dof, :dfs_total, :rmse),
+                                      Tuple{String,Int,DateTime,Symbol,Bool,String,Float64,Float64,
+                                            Float64}}
 
 """
     BatchRetrievalSummary
@@ -21,7 +22,8 @@ What `BatchRetrieval.run` did. Fields:
 - `outcomes`: one `NamedTuple` per averaged measurement with `source_file`, `index`,
   `time`, `status` (`:Converged`, `:MaxIterations` or `:Failed`), `exception` (true when
   the retrieval raised an exception rather than returning a result), `message`,
-  `chi2_obs_per_dof` and `dfs_total` (`NaN` when not available).
+  `chi2_obs_per_dof`, `dfs_total` and `rmse` (residual RMSE in measurement units; `NaN` when
+  not available).
 
 `report(summary)` gives a plain-text summary.
 """
@@ -43,7 +45,8 @@ end
     averaged_measurements(config::BatchRetrievalConfig, path) -> Vector{Measurement}
 
 Read one DCS file with `config.reader` (with `config.noise`, when given, as the noise model
-applied to the full-spectrum records) and average it into bins of `config.averaging_period`.
+applied to the full-spectrum records), average it into bins of `config.averaging_period`, and
+apply `config.conditions` when given.
 
 # Example
 ```julia
@@ -56,8 +59,15 @@ function averaged_measurements(config::BatchRetrievalConfig, path::AbstractStrin
              DCSReaderConfig(r.path_length_cm, r.pressure_scale, r.field_layout, config.noise,
                              r.invalid_records, r.time_epoch)
     records = read_measurements(DCS, path; reader_config = reader)
-    return time_average(records, config.averaging_period)
+    averaged = time_average(records, config.averaging_period)
+    config.conditions === nothing && return averaged
+    return [apply_conditions(m, config.conditions) for m in averaged]
 end
+
+"""Coordinates of the observations of a measurement in the retrieval, in the order of `y`."""
+retrieval_coordinates(config::BatchRetrievalConfig, m::Measurement) =
+    reduce(vcat, [collect(Float64, CoreLayer.window_measurement(config.retrieval, m, i).coordinate)
+                  for i in eachindex(config.retrieval.windows_cm)])
 
 """
     retrieve_measurement(config::BatchRetrievalConfig, measurement)
@@ -85,14 +95,31 @@ function retrieve_measurement(config::BatchRetrievalConfig, measurement::Measure
     end
 end
 
+# Configurations sent to this process by the main process, by key (worker side). The
+# configuration holds the absorbers (lookup tables of 100 MB and more), so it is sent to each
+# worker once, one worker at a time, before the measurements are distributed: sending it with
+# every task, or concurrently to one worker as a CachingPool closure can, has corrupted the
+# stream for configurations of several hundred MB.
+const WORKER_CONFIGS = Dict{UInt64,Any}()
+
+_store_config(key::UInt64, config) = (WORKER_CONFIGS[key] = config; nothing)
+_drop_config(key::UInt64) = (delete!(WORKER_CONFIGS, key); nothing)
+_retrieve_stored(key::UInt64, m::Measurement) = retrieve_measurement(WORKER_CONFIGS[key], m)
+
 function _retrieve_all(config::BatchRetrievalConfig, measurements::Vector{<:Measurement})
-    task = m -> retrieve_measurement(config, m)
-    config.parallel === :serial && return map(task, measurements)
+    config.parallel === :serial && return map(m -> retrieve_measurement(config, m), measurements)
     added = _add_workers(config.n_workers)
+    pool_workers = workers()[1:config.n_workers]
+    key = rand(UInt64)
     try
-        pool = CachingPool(workers()[1:config.n_workers])
-        return pmap(task, pool, measurements)
+        for w in pool_workers
+            remotecall_wait(_store_config, w, key, config)
+        end
+        return pmap(m -> _retrieve_stored(key, m), WorkerPool(pool_workers), measurements)
     finally
+        for w in pool_workers
+            w in workers() && remotecall_wait(_drop_config, w, key)
+        end
         isempty(added) || rmprocs(added)
     end
 end
@@ -108,29 +135,6 @@ function _add_workers(n_workers::Integer)
 end
 
 # ---------------------------------------------------------------- run folder and manifest
-
-function _git_hash()
-    try
-        dir = pkgdir(parentmodule(parentmodule(@__MODULE__)))
-        cmd = Cmd(`git rev-parse --short HEAD`; dir = dir)
-        return strip(read(pipeline(cmd; stderr = devnull), String))
-    catch
-        return "nogit"
-    end
-end
-
-function _create_run_folder(config::BatchRetrievalConfig, start_time::DateTime, git_hash)
-    base = joinpath(config.output_root,
-                    string(Dates.format(start_time, "yyyy-mm-dd"), "_", config.experiment, "_",
-                           git_hash))
-    folder, k = base, 1
-    while ispath(folder)                         # a second run on the same day and commit
-        k += 1
-        folder = string(base, "_", k)
-    end
-    mkpath(joinpath(folder, "results"))
-    return folder
-end
 
 function _results_path(folder::AbstractString, input::AbstractString, used::Set{String})
     stem = splitext(basename(input))[1]
@@ -219,8 +223,9 @@ print(report(summary))
 """
 function run(config::BatchRetrievalConfig)
     start_time = now()
-    git_hash = _git_hash()
-    folder = _create_run_folder(config, start_time, git_hash)
+    git_hash = git_short_hash()
+    folder = create_run_folder(config.output_root, config.experiment; time = start_time,
+                               git_hash = git_hash)
     write(joinpath(folder, "configuration.txt"), configuration_text(config))
     files = input_files(config)
     for f in files.skipped
@@ -256,6 +261,7 @@ function run(config::BatchRetrievalConfig)
         offset += n
         results = RetrievalResult[]
         times, metadata, failures = DateTime[], NamedTuple[], NamedTuple[]
+        coordinates = Vector{Float64}[]
         for (i, (m, o)) in enumerate(zip(f.measurements, file_outcomes))
             status = o.result === nothing ? :Failed : Symbol(string(o.result.status))
             if o.result === nothing
@@ -263,7 +269,8 @@ function run(config::BatchRetrievalConfig)
             else
                 push!(results, o.result)
                 push!(times, m.time)
-                push!(metadata, merge(m.metadata, (measurement_index = i,)))
+                push!(metadata, merge(m.metadata, (measurement_index = i, conditions = m.conditions)))
+                push!(coordinates, retrieval_coordinates(config, m))
             end
             status === :Failed &&
                 @warn "Retrieval failed" file = path index = i time = m.time message = o.message
@@ -271,13 +278,14 @@ function run(config::BatchRetrievalConfig)
                              status = status, exception = o.result === nothing,
                              message = String(o.message),
                              chi2_obs_per_dof = o.result === nothing ? NaN : o.result.chi2_obs_per_dof,
-                             dfs_total = o.result === nothing ? NaN : o.result.dfs_total))
+                             dfs_total = o.result === nothing ? NaN : o.result.dfs_total,
+                             rmse = o.result === nothing ? NaN : o.result.rmse))
         end
         out = _results_path(folder, path, used_names)
         attributes = (source_file = abspath(path), experiment = config.experiment,
                       n_measurements = n, failures = failures, file_error = f.error)
         save_results(out, results; times = times, metadata = metadata,
-                     attributes = attributes)
+                     coordinates = coordinates, attributes = attributes)
         push!(result_files, out)
     end
 
@@ -328,8 +336,8 @@ end
 
 Plain-text summary of a batch run: run folder, files processed, skipped and failed, counts of
 converged, max-iterations and failed retrievals, and the distribution (min, quartiles,
-max) of chi2 per degree of freedom (observation term) and of total DFS over the retrievals
-that did not fail. Printing it is the caller's choice.
+max) of chi2 per degree of freedom (observation term), total DFS and residual RMSE over the
+retrievals that did not fail. Printing it is the caller's choice.
 
 # Example
 ```julia
@@ -350,6 +358,7 @@ function CoreLayer.report(summary::BatchRetrievalSummary)
     ok = [o for o in summary.outcomes if o.status !== :Failed]
     _distribution_line(io, "chi2_obs_per_dof", [o.chi2_obs_per_dof for o in ok])
     _distribution_line(io, "dfs_total", [o.dfs_total for o in ok])
+    _distribution_line(io, "rmse", [o.rmse for o in ok])
     for o in summary.outcomes
         o.status === :Failed &&
             println(io, "failed: ", basename(o.source_file), " #", o.index, " ", o.time, ": ",
@@ -364,3 +373,5 @@ end
 Base.show(io::IO, ::MIME"text/plain", summary::BatchRetrievalSummary) = print(io, report(summary))
 
 export BatchRetrievalSummary, averaged_measurements, retrieve_measurement, outcome_counts
+export retrieval_coordinates
+

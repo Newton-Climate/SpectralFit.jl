@@ -29,14 +29,16 @@ is_retrieved(condition::Symbol, x_prior) =
 """
     build_forward_model(atmosphere, absorbers, instrument, baseline, space, units,
                         measurement, x_prior; wavenumber_fine_cm = nothing,
-                        fine_grid_spacing_cm = nothing) -> ForwardModel
+                        fine_grid_spacing_cm = nothing, fine_grid_margin_cm = nothing) -> ForwardModel
 
 Do all build-time work for one spectral window and return a callable `ForwardModel`:
 
 1. bind parameter slots of the atmosphere and instrument against the names in `x_prior`
    (a slot becomes `FromState` when the state has its entry);
 2. prepare the instrument and the baseline for `measurement`;
-3. choose the fine grid (cm-1) from the instrument when none is given, check that it covers
+3. choose the fine grid (cm-1) from the instrument when none is given (`fine_grid_margin_cm`
+   sets how far it extends beyond the observations; `nothing` keeps the instrument default,
+   1 cm-1 for DCS), check that it covers
    the instrument and lies inside every cross-section model's range, and bind it to the
    instrument;
 4. wrap each absorber in `Precomputed` when none of the conditions it depends on are
@@ -58,12 +60,13 @@ function build_forward_model(atmosphere::AbstractAtmosphere, absorbers::NamedTup
                              space::AbstractMeasurementSpace, units::AbstractStateUnits,
                              measurement::Measurement, x_prior::ComponentVector;
                              wavenumber_fine_cm::Union{Nothing,AbstractRange} = nothing,
-                             fine_grid_spacing_cm::Union{Nothing,Real} = nothing)
+                             fine_grid_spacing_cm::Union{Nothing,Real} = nothing,
+                             fine_grid_margin_cm::Union{Nothing,Real} = nothing)
     atm = bind_parameters(atmosphere, x_prior)
     prepared = bind_parameters(prepare(bind_parameters(instrument, x_prior), measurement), x_prior)
 
     grid = wavenumber_fine_cm === nothing ?
-        choose_fine_grid(prepared, fine_grid_spacing_cm, x_prior) : wavenumber_fine_cm
+        choose_fine_grid(prepared, fine_grid_spacing_cm, x_prior, fine_grid_margin_cm) : wavenumber_fine_cm
     check_fine_grid(grid, prepared, absorbers, x_prior)
     prepared = bind_fine_grid(prepared, grid)
 
@@ -77,13 +80,16 @@ function build_forward_model(atmosphere::AbstractAtmosphere, absorbers::NamedTup
 end
 
 """
-    choose_fine_grid(prepared, spacing_cm, x_prior) -> AbstractRange
+    choose_fine_grid(prepared, spacing_cm, x_prior, margin_cm = nothing) -> AbstractRange
 
 Fine grid when none is given. Without a spacing, the instrument's `default_fine_grid`. With a
 spacing (cm-1), the instrument coverage at `x_prior` padded by two spacings on each side.
-DCS keeps its v0.1 default (1 cm margin) at the requested spacing.
+DCS keeps its v0.1 default (1 cm margin) at the requested spacing; `margin_cm` (cm-1)
+overrides that margin, for example to fit inside a lookup table that ends near the window.
 """
-function choose_fine_grid(prepared, spacing_cm, x_prior)
+function choose_fine_grid(prepared, spacing_cm, x_prior, margin_cm = nothing)
+    margin_cm === nothing || throw(ArgumentError(
+        "fine_grid_margin_cm is only supported for the DCS instrument, not $(nameof(typeof(prepared)))"))
     if spacing_cm === nothing
         hasmethod(default_fine_grid, Tuple{typeof(prepared)}) || throw(ArgumentError(
             "$(nameof(typeof(prepared))) has no default fine grid; pass wavenumber_fine_cm " *
@@ -95,8 +101,9 @@ function choose_fine_grid(prepared, spacing_cm, x_prior)
     start = lo - 2 * spacing_cm
     return range(start; step = Float64(spacing_cm), length = n)
 end
-choose_fine_grid(prepared::PreparedDCS, spacing_cm, x_prior) =
-    default_fine_grid(prepared; spacing_cm = spacing_cm, x_prior = x_prior)
+choose_fine_grid(prepared::PreparedDCS, spacing_cm, x_prior, margin_cm = nothing) =
+    margin_cm === nothing ? default_fine_grid(prepared; spacing_cm = spacing_cm, x_prior = x_prior) :
+    default_fine_grid(prepared; spacing_cm = spacing_cm, x_prior = x_prior, margin_cm = margin_cm)
 
 function maybe_precompute(absorber::Absorber, grid, conditions, x_prior)
     model = absorber.model

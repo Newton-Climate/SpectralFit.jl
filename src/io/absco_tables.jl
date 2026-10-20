@@ -9,13 +9,15 @@
 #   Gas_XX_Absorption    (n_nu, n_h2o, n_T, n_p)  cm2/molecule
 
 """
-    read_absco_table(path; gas = nothing, range_cm = nothing) -> ABSCOTable
+    read_absco_table(path; gas = nothing, range_cm = nothing, h2o_indices = nothing) -> ABSCOTable
 
 Read an OCO ABSCO HDF5 table into an `ABSCOTable`. `gas` selects the absorption dataset by
 its two-digit HITRAN gas number (`gas = 2` reads `Gas_02_Absorption`); by default the file
 must hold exactly one `Gas_XX_Absorption` dataset. `range_cm = (minimum, maximum)`, in cm-1,
 reads only the wavenumbers inside that interval plus one neighbour on each side, which keeps
-memory small for the multi-gigabyte production tables. Pressure is converted from Pa to hPa.
+memory small for the multi-gigabyte production tables. `h2o_indices` keeps only those
+entries of the H2O broadener axis (`h2o_indices = 1:1` is the dry-air slice, H2O = 0; an
+axis of length one is held constant). Pressure is converted from Pa to hPa.
 A file without `Broadener_01_VMR` is read as a table with one H2O value, 0. A one-dimensional
 `Temperature` is shared by all pressure levels.
 
@@ -25,7 +27,8 @@ cross_section(co2, 6210.0:0.01:6250.0, GasConditions(850.0, 290.0, 0.01))
 ```
 """
 function read_absco_table(path::AbstractString; gas::Union{Nothing,Integer} = nothing,
-                          range_cm::Union{Nothing,Tuple{Real,Real}} = nothing)
+                          range_cm::Union{Nothing,Tuple{Real,Real}} = nothing,
+                          h2o_indices::Union{Nothing,AbstractVector{<:Integer}} = nothing)
     isfile(path) || throw(ArgumentError("ABSCO file not found: $path"))
     return HDF5.h5open(path, "r") do file
         for name in ("Wavenumber", "Temperature", "Pressure")
@@ -51,6 +54,12 @@ function read_absco_table(path::AbstractString; gas::Union{Nothing,Integer} = no
         end
         size(sigma, 1) == length(nu_index) || throw(DimensionMismatch(
             "ABSCO dataset $gas_name in $path does not match the Wavenumber length"))
+        if h2o_indices !== nothing
+            all(i -> 1 <= i <= length(h2o), h2o_indices) || throw(ArgumentError(
+                "h2o_indices $h2o_indices: the table has $(length(h2o)) H2O broadener values"))
+            h2o = h2o[h2o_indices]
+            sigma = sigma[:, h2o_indices, :, :]
+        end
         table_axes = (wavenumber_cm = nu_all[nu_index], h2o_mole_fraction = h2o,
                       temperature_K = temperature_K, pressure_hPa = pressure_hPa)
         ABSCOTable(sigma, table_axes)

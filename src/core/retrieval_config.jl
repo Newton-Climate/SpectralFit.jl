@@ -17,6 +17,8 @@ How core objects are assembled for one measurement. Fields (units in names):
 - `h2o_broadening::Dict{Symbol,Float64}`: absorber name => coefficient; wraps that absorber in
   `H2OBroadened` at build time.
 - `fine_grid_spacing_cm`: fine-grid spacing in cm-1, or `nothing` for the instrument default.
+- `fine_grid_margin_cm`: how far the fine grid extends beyond the observations, in cm-1, or
+  `nothing` for the instrument default (1 cm-1 for DCS). Lookup tables must cover it.
 - `masked_windows_cm`, `mask_mode` (`:deweight`, factor `mask_factor`, or `:drop`).
 - `baseline_prior`: `:from_measurement` (default; baseline entries of `x_prior` replaced by
   `initial_coefficients`) or `:as_given`.
@@ -43,6 +45,7 @@ struct RetrievalConfig{M<:AbstractMeasurementSpace, U<:AbstractStateUnits,
     retrieve_temperature::Bool
     h2o_broadening::Dict{Symbol,Float64}
     fine_grid_spacing_cm::Union{Nothing,Float64}
+    fine_grid_margin_cm::Union{Nothing,Float64}
     masked_windows_cm::Vector{Tuple{Float64,Float64}}
     mask_mode::Symbol
     mask_factor::Float64
@@ -56,7 +59,7 @@ function RetrievalConfig(; windows_cm, baseline_coefficients, baseline_mode::Sym
                          instrument::AbstractInstrument = DCS(),
                          retrieve_pressure::Bool = false, retrieve_temperature::Bool = false,
                          h2o_broadening = Dict{Symbol,Float64}(),
-                         fine_grid_spacing_cm = nothing,
+                         fine_grid_spacing_cm = nothing, fine_grid_margin_cm = nothing,
                          masked_windows_cm = Tuple{Float64,Float64}[],
                          mask_mode::Symbol = :deweight, mask_factor::Real = 1e-5,
                          baseline_prior::Symbol = :from_measurement,
@@ -79,12 +82,15 @@ function RetrievalConfig(; windows_cm, baseline_coefficients, baseline_mode::Sym
         throw(ArgumentError("baseline_prior: must be :from_measurement or :as_given, got :$baseline_prior"))
     fine_grid_spacing_cm === nothing || fine_grid_spacing_cm > 0 ||
         throw(ArgumentError("fine_grid_spacing_cm: must be positive"))
+    fine_grid_margin_cm === nothing || fine_grid_margin_cm >= 0 ||
+        throw(ArgumentError("fine_grid_margin_cm: must be non-negative"))
     masked = Tuple{Float64,Float64}[(Float64(a), Float64(b)) for (a, b) in masked_windows_cm]
     broadening = Dict{Symbol,Float64}(Symbol(k) => Float64(v) for (k, v) in h2o_broadening)
     spacing = fine_grid_spacing_cm === nothing ? nothing : Float64(fine_grid_spacing_cm)
+    margin = fine_grid_margin_cm === nothing ? nothing : Float64(fine_grid_margin_cm)
     return RetrievalConfig(windows, coefficients, baseline_mode, measurement_space, state_units,
                            instrument, retrieve_pressure, retrieve_temperature, broadening,
-                           spacing, masked, mask_mode, Float64(mask_factor), baseline_prior,
+                           spacing, margin, masked, mask_mode, Float64(mask_factor), baseline_prior,
                            solver)
 end
 
@@ -145,7 +151,8 @@ function build_forward_model(config::RetrievalConfig, absorbers::NamedTuple,
         build_forward_model(atm, built_absorbers, config.instrument, config_baseline(config, i),
                             config.measurement_space, config.state_units,
                             window_measurement(config, measurement, i), x_prior;
-                            fine_grid_spacing_cm = config.fine_grid_spacing_cm)
+                            fine_grid_spacing_cm = config.fine_grid_spacing_cm,
+                            fine_grid_margin_cm = config.fine_grid_margin_cm)
     end
     return length(windows) == 1 ? windows[1] : MultiWindowModel(windows)
 end

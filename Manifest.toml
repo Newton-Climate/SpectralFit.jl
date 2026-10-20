@@ -2,7 +2,7 @@
 
 julia_version = "1.12.7"
 manifest_format = "2.0"
-project_hash = "f6c90a4f3a6fb6112f6677db07e377f35da56691"
+project_hash = "eddcc1a08a4d5c394a526abb86b044c2263d278a"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -1324,10 +1324,10 @@ weakdeps = ["ChainRulesCore"]
     SpecialFunctionsChainRulesCoreExt = "ChainRulesCore"
 
 [[deps.SpectralFits]]
-deps = ["Dates", "DiffResults", "Distributed", "ForwardDiff", "HDF5", "Interpolations", "JLD2", "LinearAlgebra", "Statistics", "vSmartMOM"]
+deps = ["ComponentArrays", "Dates", "DiffResults", "Distributed", "ForwardDiff", "HDF5", "Interpolations", "JLD2", "LinearAlgebra", "Printf", "Random", "SparseArrays", "Statistics", "TOML", "vSmartMOM"]
 path = "."
 uuid = "538e1738-f75f-4ead-b58e-a0df26ad9382"
-version = "0.1.0"
+version = "0.2.0"
 
 [[deps.StackViews]]
 deps = ["OffsetArrays"]

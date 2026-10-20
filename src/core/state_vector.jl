@@ -58,4 +58,21 @@ function vmr_to_column(x::ComponentVector, total_column; gases, h2o::Symbol = :H
     return y
 end
 
-export prior_precision_from_sigma, column_to_vmr, vmr_to_column
+"""
+    state_indices(x::ComponentVector, name::Symbol) -> Vector{Int}
+
+Flat indices of the top-level state entry `name` (all its elements, nested ones included).
+
+```julia
+x = ComponentVector(H2O = [1.0, 2.0], CH4 = [3.0, 4.0], baseline = (window_1 = [1.0],))
+state_indices(x, :CH4)    # [3, 4]
+```
+"""
+function state_indices(x::ComponentVector, name::Symbol)
+    hasproperty(x, name) || throw(ArgumentError("state has no entry $name; entries: $(propertynames(x))"))
+    prefix = String(name)
+    return findall(l -> l == prefix || startswith(l, prefix * "[") || startswith(l, prefix * "."),
+                   Vector{String}(labels(x)))
+end
+
+export prior_precision_from_sigma, column_to_vmr, vmr_to_column, state_indices

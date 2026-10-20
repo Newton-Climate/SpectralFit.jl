@@ -17,9 +17,18 @@ Dependencies point inward only. Each layer is a submodule. The layer modules are
   reading or writing, no printing, no global state. `interfaces.jl` holds every abstract type
   and generic function; each other file declares its own exports.
 - `src/io/` (`SpectralFits.IOLayer`): every file read and write. The DCS HDF5 reader,
-  line-list and lookup-table loaders, the OCO ABSCO reader, results files.
-- `src/apps/` (`SpectralFits.Apps`): workflows. Each app is a configuration struct plus
-  `run(config)`. The first app is `Apps.BatchRetrieval`.
+  line-list and lookup-table loaders, the OCO ABSCO reader, results files, run folders
+  (`run_folders.jl`), TOML configuration files with `extends` and `[[variants]]`
+  (`config_files.jl`), and the parsers that turn configuration tables into core objects,
+  shared by every app (`config_specs.jl`: absorbers, noise models, readers, solvers,
+  retrieval settings, conditions tables).
+- `src/apps/` (`SpectralFits.Apps`): workflows. Each app is a configuration struct, a
+  constructor from a configuration table, and `run(config)` returning a summary with its
+  diagnostics. `Apps.BatchRetrieval` retrieves every time average of many measurement
+  files; `Apps.ProfileOSSE` runs synthetic vertical-profile retrievals; `Apps.LookupTables`
+  builds cross-section lookup tables (core `tabulate_cross_sections`,
+  `lookup_table_from_grid`; io `subset_line_list`, `save_lookup_table`). `Apps.run_config(path)`
+  dispatches a configuration file on its `app` key; `bin/run_config.jl` is the command line.
 - `test/` mirrors `src/`, plus `test/integration/` (end-to-end retrievals) and
   `test/regression/` (comparison with the v0.1 reference data).
 - `benchmark/forward_model_benchmarks.jl`: forward-model and Jacobian timings.
@@ -67,7 +76,22 @@ inputs and is solved with `solve(problem, GaussNewton())` or
 carries its status, posterior covariance, averaging kernel, DFS per element (same axes as the
 state) and in total, chi squared per degree of freedom, prior influence, condition number and
 the Rodgers convergence value; all are computed in one place, `retrieval_result`.
-`report(result)` returns a plain-text summary with a CSV table.
+`report(result)` returns a plain-text summary with a CSV table. The posterior covariance is
+inverted in Jacobi-scaled form (`scaled_inverse`), since state units differ by up to 1e22.
+`correlated_prior_precision` builds vertically correlated priors, and `synthetic_measurement`
+the noisy spectra of observing system simulation experiments.
+
+## Configuration files
+
+An experiment is a TOML file, not a script. `read_config` resolves `extends` (a base file,
+merged table by table, the extending file wins), relative paths (against the file that sets
+them) and `[[variants]]` (one run each, experiment `<experiment>_<name>`; `_replace` and
+`_remove` markers replace or drop a table instead of merging it). Each app checks
+its keys (unknown keys are errors) and builds every variant before running any.
+`run(config)` creates `<output_root>/<yyyy-mm-dd>_<experiment>_<git hash>[_k]/`, copies the
+configuration into it, and writes results with `save_results`; `find_run` locates the
+newest folder of an experiment. Research repositories keep their configurations and their
+analysis scripts; the workflow code lives here.
 
 ## Rules
 

@@ -75,4 +75,51 @@ function load_cross_section_model(::Type{LookupTable}, jld2_path::AbstractString
     return LookupTable(model)
 end
 
-export load_cross_section_model
+"""
+    subset_line_list(source, destination; range_cm, relabel = nothing) -> destination
+
+Copy the lines of the 160-character HITRAN-format file `source` whose centre lies in
+`range_cm = (lo, hi)` (cm-1) to `destination`. `relabel = "491" => " 14"` keeps only lines
+whose 3-character molecule-isotope field is `"491"` and rewrites it to `" 14"` (TCCON labels
+HDO as molecule 49, which HITRAN uses for COCl2).
+"""
+function subset_line_list(source::AbstractString, destination::AbstractString;
+                          range_cm::Tuple{Real,Real}, relabel::Union{Nothing,Pair{<:AbstractString,<:AbstractString}} = nothing)
+    isfile(source) || throw(ArgumentError("line list not found: $source"))
+    relabel === nothing || (length(relabel.first) == 3 && length(relabel.second) == 3) ||
+        throw(ArgumentError("relabel: both fields must have 3 characters, got $relabel"))
+    n = 0
+    open(destination, "w") do io
+        for line in eachline(source)
+            length(line) < 15 && continue
+            nu = tryparse(Float64, strip(line[4:15]))
+            (nu === nothing || nu < range_cm[1] || nu > range_cm[2]) && continue
+            if relabel !== nothing
+                line[1:3] == relabel.first || continue
+                line = relabel.second * line[4:end]
+            end
+            println(io, line)
+            n += 1
+        end
+    end
+    n > 0 || throw(ArgumentError("subset_line_list: no lines of $source in $range_cm" *
+                                 (relabel === nothing ? "" : " labelled \"$(relabel.first)\"")))
+    return destination
+end
+
+"""
+    save_lookup_table(path, table::LookupTable; attributes = Dict{String,Any}()) -> path
+
+Write `table` with JLD2 under the key `"itp_model"` (the vSmartMOM `InterpolationModel`, as
+`save_interpolation_model` does), so `load_cross_section_model(LookupTable, path)` reads it,
+plus `attributes` (plain data, see `plain_value`) under `"attributes"`.
+"""
+function save_lookup_table(path::AbstractString, table::LookupTable; attributes = Dict{String,Any}())
+    JLD2.jldopen(path, "w") do file
+        file["itp_model"] = table.model
+        file["attributes"] = plain_value(attributes)
+    end
+    return path
+end
+
+export load_cross_section_model, subset_line_list, save_lookup_table

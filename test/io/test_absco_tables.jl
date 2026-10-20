@@ -27,6 +27,16 @@ end
     mktempdir() do dir
         path = write_absco_fixture(joinpath(dir, "co2.h5"); nu, h2o, T, p_Pa, sigma)
 
+        @testset "h2o_indices keeps a slice of the broadener axis" begin
+            dry = SF.IOLayer.read_absco_table(path; h2o_indices = [1])
+            @test dry.h2o_mole_fraction == [0.0]
+            @test dry.sigma == sigma[:, 1:1, :, :]
+            # an axis of length one is held constant: any H2O gives the dry values
+            c = GasConditions(700.0, 260.0, 0.02)
+            @test cross_section(dry, 6201.0:0.1:6209.0, c) ≈ f.(6201.0:0.1:6209.0, 0.0, 260.0, 700.0) rtol = 1e-10
+            @test_throws r"h2o_indices" SF.IOLayer.read_absco_table(path; h2o_indices = [3])
+        end
+
         @testset "returns the table written" begin
             table = read_absco(path)
             @test table isa ABSCOTable
