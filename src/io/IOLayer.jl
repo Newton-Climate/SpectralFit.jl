@@ -7,6 +7,7 @@ results files. Uses core types; core never uses this module.
 module IOLayer
 
 using Dates
+using LinearAlgebra
 using HDF5
 using JLD2
 using ComponentArrays
