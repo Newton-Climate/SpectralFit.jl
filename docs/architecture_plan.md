@@ -1110,9 +1110,11 @@ or as the plan proposed. They still need confirmation; when one is confirmed, de
 "provisional" and the question text.
 
 1. Pushing the `v0.1-legacy` tag. Provisional: the tag exists locally only.
-2. Physical constants. Provisional: the v0.1 values (gravity 9.8196, gas constant 8.314472,
-   Avogadro 6.0221415e23) for regression parity. Switching to CODATA 2018 and standard gravity
-   is a one-file change in `core/physical_constants.jl`.
+2. Physical constants. Resolved: CODATA 2018 exact values (Avogadro 6.02214076e23, gas
+   constant N_A * k_B = 8.314462618...) and standard gravity 9.80665 in
+   `core/physical_constants.jl` (v0.1 used 9.8196, 8.314472, 6.0221415e23). The v0.1
+   regression reference was regenerated from v0.1-legacy with the same three constants
+   patched in (test/regression/README.md), so parity stays exact.
 3. The 0.9938 DCS pressure factor. Provisional: kept as the default of
    `DCSReaderConfig(pressure_scale = 0.9938)`. Its physical origin is still unknown.
 4. DCS interpolation. Provisional: the cubic B-spline (exact parity; spectra match v0.1 to

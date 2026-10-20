@@ -1,6 +1,9 @@
 SpectralFits v0.1-legacy regression reference (Phase 0)
 =======================================================
 
+The reference is v0.1-legacy code with three constants (r, N_A, g0) patched to CODATA 2018
+and standard gravity; see "Constants patch" below.
+
 Files
 -----
 - generate_reference_v0_1.jl : the script that produced the data (old API, tag v0.1-legacy).
@@ -14,10 +17,30 @@ JLD2 0.4.55 (the versions in test/Manifest.toml of v0.1-legacy), CPU. Line list:
 test/data/hit20_subset.par. Running the script twice gives bit-identical results
 (apart from meta/generated_utc).
 
-How it was run: a temporary environment made from the tag's test/Project.toml and
-test/Manifest.toml, with the SpectralFits `path = ".."` entry pointed at the legacy checkout;
-then `julia --project=<env> generate_reference_v0_1.jl <out.jld2>`. Nothing in the
-legacy checkout was modified.
+Constants patch (IMPORTANT): the reference is the v0.1-legacy code with exactly three
+constants in the legacy src/constants.jl changed to the values the new code uses
+(src/core/physical_constants.jl): CODATA 2018 exact values and standard gravity.
+    const r  = 6.02214076e23 * 1.380649e-23   # N_A * k_B = 8.31446261815324 (was 8.314472)
+    const Nₐ = 6.02214076e23                  # (was 6.0221415e23)
+    const g₀ = 9.80665                        # standard gravity (was 9.8196)
+Why: the new code adopts CODATA 2018 and standard gravity (open question 2 in
+docs/architecture_plan.md). Patching the same constants into v0.1 keeps the regression
+exact (forward model 1e-10, retrievals ~1e-12) while still testing every algorithmic path
+of the old code; with the old constants the air columns, and everything built from them,
+would differ by up to 1.3e-3 relative. Nothing else in the legacy code was modified. The
+generator asserts the patched values are loaded, records them under const/*, and stores
+the patch description in meta/constants_patch.
+
+Effect relative to the unpatched v0.1 reference (max relative change): homogeneous air
+column (calc_vcd; R and N_A) 1.0e-6; layered air columns (vcd_pressure; N_A and g0)
+1.32e-3; ch4_inv x_retrieved 1.0e-6 (gas columns; baseline terms ~5e-13); prof_inv
+x_retrieved 1.35e-3 (gas columns; baseline terms <= 5e-8); chi2 changes 2e-11 (ch4_inv)
+and 1e-7 (prof_inv). Cross-sections and iteration counts are unchanged.
+
+How it was run: `git worktree add` of the tag v0.1-legacy, the three constants above
+patched in its src/constants.jl, and a temporary environment made from the tag's
+test/Project.toml and test/Manifest.toml with the SpectralFits `path = ".."` entry pointed
+at that patched checkout; then `julia --project=<env> generate_reference_v0_1.jl <out.jld2>`.
 
 
 Naming convention for the "linear" flag (IMPORTANT)
@@ -35,13 +58,14 @@ single Gauss-Newton step (max_iter = 1) and the log-space weighting is wrong (pl
 Groups and keys
 ---------------
 meta/*   strings: description, legacy_tag, julia_version, vSmartMOM_version,
-         Interpolations_version, ForwardDiff_version, generated_utc, line_list_file.
+         Interpolations_version, ForwardDiff_version, generated_utc, line_list_file,
+         constants_patch.
 
-const/*  constants used by the old code (src/constants.jl, src/utils.jl):
+const/*  constants used by the (patched) old code (src/constants.jl, src/utils.jl):
     c_cm_per_s = 2.99792458e10           (SF.c; not used in these configurations)
-    R_J_per_mol_K = 8.314472             (SF.r)
-    N_A_per_mol = 6.0221415e23           (SF.N_A)
-    g0_m_per_s2 = 9.8196                 (SF.g0)
+    R_J_per_mol_K = 8.31446261815324     (SF.r, patched; = 6.02214076e23 * 1.380649e-23)
+    N_A_per_mol = 6.02214076e23          (SF.N_A, patched)
+    g0_m_per_s2 = 9.80665                (SF.g0, patched)
     dry_air_molar_mass_kg_per_mol = 28.9647e-3, h2o_molar_mass_kg_per_mol = 18.01528e-3
                                           (inside vcd_pressure)
 
@@ -63,7 +87,7 @@ ch4_fm/*  and  co2_fm/*  : inputs common to a window
                          collect(6226.0:0.0067:6230.0) (CO2), 598 points, cm-1.
     pressure_hPa = 850.0, temperature_K = 290.0, pathlength_cm = 195017.0.
     vcd_air_molec_per_cm2 = calc_vcd(p, T, L) = L * p / (R*T) * N_A / 1e4
-        (p in hPa, L in cm; = 4.140089023214376e24). Used only to build the gas columns.
+        (p in hPa, L in cm; = 4.1400931860605986e24). Used only to build the gas columns.
     molecules          : ["H2O","CH4"] or ["H2O","CO2"] (this is also the state order).
     mol_<GAS>/mol, /iso: HITRAN molecule and isotope numbers (H2O 1/1, CH4 6/1, CO2 2/1).
     mol_<GAS>/vmr_true : mole fraction used to build the column (H2O 0.01, CH4 1900e-9,
@@ -186,7 +210,7 @@ Old-code semantics a re-implementation must match
        make_vcd_profile(p, T): dp = half_pressure_levels(p):
            h[k] = (p[k] + p[k-1])/2 for interior half-levels,
            h[1] = p[1] - (h[2] - p[1]),  h[end] = p[end] + (p[end] - h[end-1]),
-           dp = abs.(diff(h))       (here [200, 200, 200] hPa)
+           dp = abs.(diff(h))       (here [200, 200, 200] hPa; 4.2402473147018424e24 each)
        vcd_pressure(dp, T, q=0) = 100 * (1-q) * dp / (M * g0 * 100^2),
            M = (1-q)*28.9647e-3/N_A + q*18.01528e-3/N_A  (kg/molecule); T is unused.
    (The special case p[end] == p[1] in make_vcd_profile, issue 10, is avoided.)
